@@ -1,0 +1,12 @@
+spec
+jasminerunner.html
+jslint-ignore
+Gemfile
+Gemfile.lock
+Rakefile
+ci_build.sh
+.rvmrc
+eris_config.json
+*.xcf
+*.local.js
+icon-256x256 - Copy.png

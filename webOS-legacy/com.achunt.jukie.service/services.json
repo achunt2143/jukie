@@ -1,0 +1,20 @@
+{
+	"id": "com.achunt.jukie.service",
+	"description": "Jukie audio playback service (GStreamer-backed, bypasses the broken HTML5 audio pipeline)",
+	"activityTimeout": 600,
+	"services": [{
+		"name": "com.achunt.jukie.service",
+		"description": "Jukie audio playback service",
+		"commands": [
+			{ "name": "play",      "assistant": "PlayCommandAssistant",      "public": true },
+			{ "name": "pause",     "assistant": "PauseCommandAssistant",     "public": true },
+			{ "name": "resume",    "assistant": "ResumeCommandAssistant",    "public": true },
+			{ "name": "stop",      "assistant": "StopCommandAssistant",      "public": true },
+			{ "name": "getStatus", "assistant": "GetStatusCommandAssistant", "public": true },
+			{ "name": "clearCache", "assistant": "ClearCacheCommandAssistant", "public": true },
+			{ "name": "seek",      "assistant": "SeekCommandAssistant",      "public": true },
+			{ "name": "setVolume", "assistant": "SetVolumeCommandAssistant", "public": true },
+			{ "name": "getVolume", "assistant": "GetVolumeCommandAssistant", "public": true }
+		]
+	}]
+}

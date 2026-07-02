@@ -1,0 +1,11 @@
+# Secrets - never commit
+secrets.local.json
+*.wvd
+*.local.json
+device/
+client_id.bin
+private_key.pem
+
+# Build output
+build/
+*.exe

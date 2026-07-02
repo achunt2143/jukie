@@ -1,0 +1,279 @@
+@charset "UTF-8";
+/*
+ * Jukie theme overlay - Apple-Music-flavored accents on top of the inherited Palm
+ * Music look. Loaded AFTER music.css so these rules win. Accent = Apple Music red
+ * #fa2d48. Kept to colors/accents only (no layout changes) and uses the same legacy
+ * -webkit- gradient syntax the base sheet uses (TouchPad WebKit: no CSS variables,
+ * no unprefixed gradients/radius). See roadmap #7.
+ */
+
+/* ---- Navigation: red active state instead of the blue gradient ---- */
+.navigation .enyo-item.active {
+	background: -webkit-gradient(linear, 0% 0%, 0% 100%, from(rgba(250,45,72,0.12)), to(rgba(250,45,72,0.05)));
+	-webkit-box-shadow: inset 3px 0 0 #fa2d48;
+}
+.navigation .enyo-item.active .name {
+	color: #fa2d48;
+	font-weight: bold;
+}
+/* DividerDrawer captions: Apple-red, and drop the stock blue divider line/arrow tint */
+.navigation .enyo-divider-caption {
+	color: #fa2d48;
+	font-size: 13px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	font-weight: bold;
+}
+.navigation .enyo-divider {
+	background: none;
+	border-bottom: 1px solid rgba(0,0,0,0.10);
+	height: auto;
+	margin: 12px 0 3px;
+}
+/* The actual visible "line" trailing each section caption (Apple Music/Your Library/
+   Playlists) is .enyo-divider-left-cap, NOT .enyo-divider (which isn't applied to any
+   element in enyo.Divider's own markup - the override above was a no-op for this piece).
+   It's a flex-grow strip - "Needs to be effectively infinity...so the left cap will take
+   as much space as possible" per Divider.css - so it draws using a real tiled PNG
+   (divider.png, blue), not a CSS color. Swapped for our own jukie-bar.png. */
+.navigation .enyo-divider-left-cap {
+	background: url(../images/jukie-bar.png) left top repeat-x;
+	background-size: auto 4px;
+}
+/* Collapse/expand arrow: jukie-arrow.png is a classic old-web vertical sprite sheet, 4
+   EQUAL-HEIGHT frames stacked top-to-bottom: default, pressed, actioned/open default,
+   actioned/open pressed. Rather than compute exact pixel frame boundaries (fragile if the
+   image ever gets re-exported at a different size), background-size:100% 400% stretches all
+   4 frames to be exactly one container-height each, and background-position at 0%/33.333%/
+   66.667%/100% lands exactly on frame N of 4 regardless of the source image's real pixel
+   dimensions - the standard N-frame vertical CSS sprite technique. */
+.navigation .enyo-collapsible-arrow {
+	opacity: 1;
+	background: url(../images/jukie-arrow.png) no-repeat 50% 0%;
+	background-size: 100% 400%;
+}
+.navigation .enyo-button-down.enyo-collapsible-arrow {
+	background-position: 50% 33.333%;
+}
+.navigation .enyo-button-switched.enyo-collapsible-arrow {
+	background-position: 50% 66.667%;
+}
+.navigation .enyo-button-down.enyo-button-switched.enyo-collapsible-arrow {
+	background-position: 50% 100%;
+}
+
+/* ---- Now Playing strip: fill the thumbnail so it isn't cropped, + a soft red glow ---- */
+.navigation .playing .label {
+	color: #fa2d48;
+}
+.navigation .playing {
+	background: -webkit-gradient(radial, 30 24, 0, 30 24, 200, from(rgba(250,45,72,0.16)), to(rgba(250,45,72,0)));
+}
+/* Currently-playing row in any list gets the same soft glow (kept static, not animated -
+   this device is old ARM hardware, a constant box-shadow costs nothing to repaint). */
+.view .song.playing,
+.view .enyo-item.playing {
+	-webkit-box-shadow: inset 0 0 16px rgba(250,45,72,0.20);
+}
+.navigation .playing .cover .img {
+	width: 42px;
+	height: 42px;
+}
+.navigation .playing .cover .img img,
+.navigation .playing .cover .img .enyo-image {
+	width: 100%;
+	height: 100%;
+	vertical-align: top;
+}
+
+/* ---- Currently-playing track row gets a red accent ---- */
+.view .song.playing .column,
+.view .enyo-item.playing .name {
+	color: #fa2d48;
+}
+.view .song.playing .column.title {
+	font-weight: bold;
+}
+
+/* ---- Player control: fill the "blue bit" (slider-progress.png) with our own bar art ----
+   NOTE: this was scoped to ".playerControl", a class that doesn't actually exist anywhere -
+   kindPlayerControl's real root className is "controls" (see playerControl.js) - so this
+   rule was a total no-op and the fill was STILL showing the stock blue slider-progress.png
+   underneath this whole time. Fixed the selector, and explicitly cleared the stock
+   -webkit-border-image (a separate property from background - setting background alone
+   doesn't suppress it, so the old blue border-image could still show through/around it).
+   Covers both the playback scrubber and the volume slider - both use kind:"ProgressSlider"
+   and share these same classes. Track/alt-bar/thumb intentionally left at stock - only the
+   fill was asked for. Uses its own dedicated jukie-slider.png (not the nav divider's
+   jukie-bar.png). It's a small 10x10 swatch, not a seamless tileable line like jukie-bar.png -
+   tiling it with repeat-x showed a row of dots instead of a solid bar, so this stretches it
+   to fill instead of repeating it (the same old-web "stretched image" pattern, just via plain
+   background-size instead of -webkit-border-image). */
+.controls .enyo-progress-bar-inner,
+.controls .enyo-progressslider-progress {
+	-webkit-border-image: none;
+	background: url(../images/jukie-slider.png) no-repeat left top;
+	background-size: 100% 100%;
+}
+
+/* ---- Affirmative buttons (Save) ---- */
+.enyo-button-affirmative {
+	-webkit-border-image: none;
+	background: -webkit-gradient(linear, 0% 0%, 0% 100%, from(#fb415c), to(#e22340));
+	color: #fff;
+	font-weight: bold;
+	-webkit-border-radius: 6px;
+	border-radius: 6px;
+}
+
+/* ---- Loading spinner on the play button ---- */
+.controls .playback .playWrap {
+	position: relative;
+	display: inline-block;
+	vertical-align: middle;
+	margin: 0 0 0 6px; /* carry the button's own left spacing on the wrapper */
+}
+/* Button flush inside the wrapper so the overlaid spinner centers over it */
+.controls .playback .playWrap .enyo-button.play {
+	margin: 0;
+}
+/* Center the 32px Enyo spinner over the 58px play button */
+.controls .playback .playWrap .jukiePlaySpinner {
+	position: absolute;
+	top: 13px;
+	left: 13px;
+	margin: 0;
+}
+/* Hide the play/pause glyph while the spinner is overlaid */
+.controls .playback .enyo-button.play.loading .enyo-button-icon {
+	visibility: hidden;
+}
+
+/* ---- Preferences/Help full-screen views (list-style, matches Songs/Albums) ----
+   Sections used to be enyo.RowGroup (native 9-slice rounded frame + label bar), but an
+   on-device screenshot comparison against the stock Sounds & Ringtones app (a proper
+   reference for what a grouped box should look like) showed the RowGroup border-image
+   renders far too faint - just a flat label bar, no clearly visible box, especially on the
+   bottom edge - versus the reference's crisp border on all four sides. Rather than fight
+   Enyo's border-image + negative-margin label positioning, both views draw their own
+   plain, explicit box (.jukieBoxSection/.jukieBoxSectionCaption) instead. */
+.jukieSettingsView .jukieSettingsList {
+	max-width: 680px;
+	margin: 0 auto;
+	padding: 8px 12px 28px;
+}
+.jukieSettingsView .jukieBoxSection {
+	margin: 20px 0 0;
+	border: 1px solid #a8a8a8;
+	border-radius: 6px;
+	background: #fff;
+	overflow: hidden;
+}
+.jukieSettingsView .jukieBoxSectionCaption {
+	padding: 8px 10px;
+	background: #e8e8e8;
+	border-bottom: 1px solid #a8a8a8;
+	font-size: 12px;
+	font-weight: bold;
+	text-transform: uppercase;
+	color: #fa2d48;
+}
+.jukieSettingsView .jukieSettingsRow {
+	padding: 10px 8px;
+}
+.jukieSettingsView .jukieSettingsLabel {
+	font-size: 16px;
+	color: #222;
+	margin: 0 0 4px;
+}
+.jukieSettingsView .jukieSettingsInput {
+	width: 100%;
+}
+/* ListSelector's closed value chip (Storefront/Stream quality) is internally an enyo.Item
+   (class enyo-listselector-item), which inherits enyo-item's default top/bottom hairline
+   border + 10px padding meant for stacked list rows - ListSelector.css's own
+   ".enyo-listselector-item { border:0; padding:0; }" has the same specificity as
+   ".enyo-item"'s rule and loses that cascade tie (Item.css loads after it), so the flat gray
+   "chip" look survives. Only targets the CLOSED chip - the popup's own option rows don't get
+   this class, so their normal list-row dividers are untouched. */
+.jukieSettingsView .enyo-listselector-item {
+	border-top: 0;
+	border-bottom: 0;
+	padding: 0;
+	background: none;
+}
+.jukieSettingsView .jukieSettingsHint {
+	font-size: 12px;
+	color: #9a9a9a;
+	line-height: 1.3em;
+	margin: 4px 0 0;
+}
+.jukieSettingsView .jukieSettingsNote {
+	font-size: 12px;
+	color: #8a8a8a;
+	line-height: 1.3em;
+	padding: 6px 8px 10px;
+}
+/* Footer action bar (Back / Save) */
+.jukieSettingsView .jukieSettingsFooter {
+	padding: 0 10px;
+}
+.jukieSettingsView .jukieSettingsFooter .enyo-button {
+	min-width: 120px;
+}
+
+/* ---- Help's own prose style (Settings' rows are form labels+hints, not paragraphs). ---- */
+.jukieHelpView .jukieHelpParagraph {
+	/* NOT width:100%+box-sizing:border-box: this WebKit build doesn't honor the unprefixed
+	   box-sizing property (no -webkit- prefix), so that combo silently fell back to the
+	   default content-box model - width:100% became the CONTENT width, with the 16px
+	   right padding added ON TOP of it, overflowing past .jukieBoxSection's edge and
+	   getting clipped by its overflow:hidden (confirmed via an on-device screenshot: text
+	   cut off mid-word at the right border). A plain block box with no explicit width
+	   already fills its container's content width minus its own padding automatically -
+	   no box-sizing needed at all. */
+	display: block;
+	white-space: normal;
+	word-wrap: break-word;
+	font-size: 14px;
+	color: #333;
+	line-height: 1.5em;
+	padding: 12px 16px;
+}
+.jukieHelpView .jukieHelpParagraph + .jukieHelpParagraph {
+	padding-top: 0;
+}
+
+/* ---- Album art carousel: the decorative frame mask (bg_flow_*.png) sits full-size,
+   z-index:999, ON TOP of the swipeable cards but has no pointer-events set, so every TAP
+   lands on the mask (a sibling of the cards, not a wrapper) and bubbles up the WRONG
+   ancestor chain - never reaching the card's onclick. Swipes still work because Enyo's
+   drag tracking binds at the scroller container level, above the mask. Make the mask
+   click-transparent so taps pass through to the card underneath. ---- */
+.flow .mask {
+	pointer-events: none;
+}
+
+/* ---- Kill the framework's default blue everywhere it can appear ----
+   .enyo-label is the Onyx theme's generic caption color (#1879cd), used by
+   ListSelector/Picker/IntegerPicker (our Settings storefront + quality pickers) -
+   none of our own CSS/JS uses this class, so overriding it is safe and total.
+   !important because these controls set the color as an inline base rule the
+   framework CSS loads after ours would otherwise still need to out-specificity. */
+.enyo-label {
+	color: #fa2d48 !important;
+}
+
+/* ---- Full-app scrim shown during a library refresh ---- */
+/* Default .enyo-scrim is only 0.3 opacity black - too light against our #f7f7f7
+   background for white text to read. Darken it so it reads clearly as "blocked". */
+.jukieRefreshScrim.enyo-scrim-dim {
+	opacity: 0.6;
+}
+.jukieRefreshScrimLabel {
+	margin-top: 16px;
+	color: #fff;
+	font-size: 16px;
+	font-weight: bold;
+	text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}

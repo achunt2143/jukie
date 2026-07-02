@@ -1,0 +1,11 @@
+{
+	"id": "com.achunt.jukie",
+	"package_format_version": 2,
+	"loc_name": "Jukie",
+	"version": "0.0.1",
+	"icon": "icon.png",
+	"miniicon": "images/notification-small.png",
+	"vendor": "achunt",
+	"app": "com.achunt.jukie",
+	"services": ["com.achunt.jukie.service"]
+}

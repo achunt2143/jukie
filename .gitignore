@@ -1,0 +1,26 @@
+# Local dev-only holding area (legacy cruft, build artifacts, and anything sensitive
+# pulled out of the shipped app/service dirs during GitHub prep) - never published.
+dev-stuff/
+
+# Built webOS package (regenerated fresh by deploy-jukie.ps1 on every run)
+*.ipk
+
+# Secrets and the compiled DRM helper bundled into the service at deploy time - these
+# MUST stay physically present in webOS-legacy/com.achunt.jukie.service/ for
+# deploy-jukie.ps1 to package them, but must never be committed.
+webOS-legacy/com.achunt.jukie.service/device.wvd
+webOS-legacy/com.achunt.jukie.service/secrets.local.json
+webOS-legacy/com.achunt.jukie.service/jukie-drm
+
+# Any *.local.* file, anywhere - this project's own convention for real secrets that must
+# stay on-device only (e.g. source/dev-token.local.js holds a real Apple developer token +
+# music user token; build-ignore already excludes *.local.js from the packaged .ipk, but
+# that has nothing to do with git - this is the actual git-side enforcement).
+*.local.*
+
+# Claude Code local session settings (personal permission/command history, not project source)
+.claude/settings.local.json
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db

@@ -1,0 +1,30 @@
+{
+	"id": "com.achunt.jukie",
+	"version": "0.0.1",
+	"vendor": "achunt",
+	"type": "web",
+	"main": "index.html",
+	"title": "Jukie",
+	"icon": "icon.png",
+   "splashicon": "icon-256x256.png",
+	"miniicon": "images/notification-small.png",
+	"noWindow": true,
+	"uiRevision": 2,
+	"debug": false,
+	"removable": false,
+	"universalSearch": {
+		"dbsearch": {
+			"displayName": "Your Library",
+			"url": "com.achunt.jukie",
+			"launchParam": "libItemId",
+			"launchParamDbField": "_id",
+			"displayFields": ["name", "artistName"],
+			"dbQuery": {
+				"from": "com.achunt.jukie.libitem:1",
+				"where": [{"prop": "sortName", "op": "?", "val": "", "collate": "primary"}],
+				"orderBy": "sortName",
+				"limit": 20
+			}
+		}
+	}
+}

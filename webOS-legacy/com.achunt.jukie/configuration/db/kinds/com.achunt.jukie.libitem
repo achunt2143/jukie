@@ -1,0 +1,11 @@
+{
+	"id": "com.achunt.jukie.libitem:1",
+	"owner": "com.achunt.jukie",
+	"indexes":
+	[
+		{ "name": "byType",     "props": [ { "name": "itemType" } ] },
+		{ "name": "byTypeName",  "props": [ { "name": "itemType" }, { "name": "sortName", "collate": "primary" } ] },
+		{ "name": "byLibId",     "props": [ { "name": "libId" } ] },
+		{ "name": "byCatalogId", "props": [ { "name": "catalogId" } ] }
+	]
+}
