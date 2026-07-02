@@ -8,6 +8,8 @@ playlist views, a Now Playing dashboard, drag-to-reorder playlists) but sources 
 catalog, library, and playback from the **Apple Music API** instead of the on-device
 media database.
 
+See [**FEATURES.md**](../FEATURES.md) for a screenshot tour of what it can do.
+
 ## Features
 
 - Full library browsing and sync: songs, albums, artists, and playlists (including
