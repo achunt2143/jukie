@@ -379,6 +379,14 @@ enyo.kind(
 		return Math.round(this.$.AudioPlayer.getVolume() * 100);
 	},
 
+	// Passes a pasted Developer Token / Music User Token down to the Luna service so
+	// jukie-drm's static secrets.local.json actually reflects them - see
+	// AudioPlayer.setCredentials.
+	setCredentials: function (webDeveloperToken, musicUserToken)
+	{
+		this.$.AudioPlayer.setCredentials(webDeveloperToken, musicUserToken);
+	},
+
 	onEnded: function()
 	{
 		if (!this.boolSuspendUpdates)

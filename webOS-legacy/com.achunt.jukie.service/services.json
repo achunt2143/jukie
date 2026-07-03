@@ -14,7 +14,8 @@
 			{ "name": "clearCache", "assistant": "ClearCacheCommandAssistant", "public": true },
 			{ "name": "seek",      "assistant": "SeekCommandAssistant",      "public": true },
 			{ "name": "setVolume", "assistant": "SetVolumeCommandAssistant", "public": true },
-			{ "name": "getVolume", "assistant": "GetVolumeCommandAssistant", "public": true }
+			{ "name": "getVolume", "assistant": "GetVolumeCommandAssistant", "public": true },
+			{ "name": "setCredentials", "assistant": "SetCredentialsCommandAssistant", "public": true }
 		]
 	}]
 }

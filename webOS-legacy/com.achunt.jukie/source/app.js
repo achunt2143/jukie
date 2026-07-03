@@ -259,6 +259,16 @@ enyo.kind({
 		{
 			this.appleMusicService.setMusicUserToken(settings.musicUserToken);
 		}
+		if (settings.developerToken || settings.musicUserToken)
+		{
+			// jukie-drm (full-track playback) has no way to receive these per-invocation -
+			// it only reads a static secrets.local.json - so runs on every boot too
+			// (not just Save), self-healing that file after a reinstall wipes it back to
+			// a placeholder. developerToken here is the same "web developer token" value
+			// secrets.local.json calls webDeveloperToken (see the Settings field's own
+			// hint text). See kindPlayback.setCredentials / JukieAudioService.setCredentials.
+			this.$.Playback.setCredentials(settings.developerToken, settings.musicUserToken);
+		}
 		if (settings.storefront)
 		{
 			this.appleMusicService.setStorefront(settings.storefront);

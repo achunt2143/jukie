@@ -29,7 +29,8 @@ enyo.kind(
 		{name: "svcClearCache", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "clearCache", onSuccess: "onClearCacheResult", onFailure: "onClearCacheResult"},
 		{name: "svcSeek", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "seek", onSuccess: "onStatus", onFailure: "onSvcFailure"},
 		{name: "svcSetVolume", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "setVolume", onSuccess: "onStatus", onFailure: "onSvcFailure"},
-		{name: "svcGetVolume", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "getVolume", onSuccess: "onGotVolume", onFailure: "onSvcFailure"}
+		{name: "svcGetVolume", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "getVolume", onSuccess: "onGotVolume", onFailure: "onSvcFailure"},
+		{name: "svcSetCredentials", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "setCredentials", onSuccess: "onCredentialsSet", onFailure: "onCredentialsSet"}
 	],
 
 	_url: "",
@@ -197,6 +198,28 @@ enyo.kind(
 		var pct = Utilities.isNumeric(response.volume) ? response.volume : 100;
 		this._status.volume = pct;
 		if (request && request.callback) { request.callback(pct / 100); }
+	},
+
+	// jukie-drm (the full-track/Widevine helper) only ever reads a static
+	// secrets.local.json next to itself - it has no way to receive tokens per
+	// invocation. This is the only path for a Developer Token / Music User Token
+	// pasted into Settings to actually reach it, since the app has no filesystem
+	// access of its own. See JukieAudioService.js's setCredentials.
+	setCredentials: function (webDeveloperToken, musicUserToken)
+	{
+		this.log("setCredentials");
+		this.$.svcSetCredentials.call({webDeveloperToken: webDeveloperToken || "", musicUserToken: musicUserToken || ""});
+	},
+
+	// Deliberately NOT routed through onStatus/onSvcFailure: this response has no
+	// state/position/etc fields, and onSvcFailure fires doError()/stops polling - wrong
+	// side effects for what's just a credentials-file write succeeding or failing.
+	onCredentialsSet: function (sender, response)
+	{
+		if (!response || response.returnValue === false)
+		{
+			this.log("setCredentials failed:", response && response.error);
+		}
 	},
 
 	// ---- service responses + polling -------------------------------------

@@ -85,6 +85,14 @@ re-add an npm-style `package.json`; it's a common mistake.)
   sink-input at a PulseAudio-assigned default, so `_playFile` re-applies the stored volume
   after every spawn, retrying briefly since the sink-input doesn't register with PulseAudio
   the instant gst starts.
+- **`setCredentials`** exists because `jukie-drm` (the full-track/Widevine helper) has no
+  way to receive tokens per-invocation - it only ever reads a static `secrets.local.json`
+  next to itself (fresh, every spawn - it's a separate process each time, no shared state
+  with this service). The app's Settings screen has no filesystem access of its own, so
+  this is the only path for a pasted Developer/Music User Token to actually reach
+  `jukie-drm`. Merges into the existing file rather than overwriting it (only writes
+  fields actually provided), so a partial update or an empty-string field never blanks an
+  already-working credential.
 - Each command assistant is `var XCommandAssistant = function(){}; .prototype.run = function(future){ future.result = JukiePlayer.<op>(); return future; }` — the spec's pattern. Args come from `this.controller.args`.
 
 ## Commands (call as `palm://com.achunt.jukie.service/<cmd>`)
@@ -100,6 +108,7 @@ re-add an npm-style `package.json`; it's a common mistake.)
 | `setVolume`  | `{ volume }` (0-100)              | same                                                        |
 | `getVolume`  | —                                | `{ returnValue, volume }`                                   |
 | `clearCache` | —                                | `{ returnValue, removed, freedBytes }`                      |
+| `setCredentials` | `{ webDeveloperToken, musicUserToken }` (either optional) | `{ returnValue }` or `{ returnValue: false, error }` |
 
 `state` ∈ `idle | playing | paused | ended | error`. Calling `play` with the same URL/song while
 paused resumes in place.

@@ -57,6 +57,12 @@ var DEFAULT_PREVIEW_DURATION = 30; // Apple preview clips are ~30s; refined if k
 // this service dir (so device.wvd + secrets.local.json sit next to it). Output goes to
 // a song-id-keyed path in /tmp, which doubles as a simple session cache.
 var DRM = '/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/jukie-drm';
+// jukie-drm has no way to receive credentials per-invocation - it only ever reads this
+// static file (working dir first, then next to the binary; both are this same directory
+// when we spawn it, since child_process.spawn inherits our cwd by default). The app's
+// Settings screen has no filesystem access of its own, so setCredentials() below is how
+// a pasted Developer/Music User Token actually reaches jukie-drm - see setCredentials.
+var SECRETS_FILE = '/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/secrets.local.json';
 // Decrypted tracks are cached on the big persistent /media/internal partition (writable
 // from the jail), NOT /tmp (a 40MB RAM disk wiped on reboot). This survives reboots and
 // is the basis for offline play.
@@ -536,6 +542,26 @@ var JukiePlayer = {
 		return { returnValue: true, volume: this.volume };
 	},
 
+	// Writes a Developer Token / Music User Token pasted into the app's Settings into
+	// secrets.local.json, so jukie-drm's NEXT spawn (a fresh process each time, reading
+	// this file fresh every run - see its findFile()) picks them up. Only overwrites the
+	// fields actually provided, so saving Settings with just one field filled in doesn't
+	// blank out an already-working credential. args keys match secrets.local.json's own
+	// field names: webDeveloperToken, musicUserToken.
+	setCredentials: function (args) {
+		args = args || {};
+		var current = {};
+		try { current = JSON.parse(fs.readFileSync(SECRETS_FILE, 'utf8')); } catch (e) {}
+		if (args.webDeveloperToken) { current.webDeveloperToken = args.webDeveloperToken; }
+		if (args.musicUserToken) { current.musicUserToken = args.musicUserToken; }
+		try {
+			fs.writeFileSync(SECRETS_FILE, JSON.stringify(current, null, 2));
+			return { returnValue: true };
+		} catch (e) {
+			return { returnValue: false, error: 'setCredentials: ' + e };
+		}
+	},
+
 	position: function () {
 		if (this.seeking) {
 			return this.pausedAt; // frozen at the seek target while ffmpeg cuts the fragment
@@ -646,5 +672,12 @@ SetVolumeCommandAssistant.prototype.run = function (future) {
 var GetVolumeCommandAssistant = function () {};
 GetVolumeCommandAssistant.prototype.run = function (future) {
 	future.result = JukiePlayer.getVolume();
+	return future;
+};
+
+var SetCredentialsCommandAssistant = function () {};
+SetCredentialsCommandAssistant.prototype.run = function (future) {
+	var args = readArgs(this, future);
+	future.result = JukiePlayer.setCredentials(args);
 	return future;
 };

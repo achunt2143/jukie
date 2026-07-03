@@ -144,7 +144,17 @@ The app also calls many stock Palm services directly via `PalmService` kinds in
   component hitting the Apple REST API. The audio *playback* Luna service is the separate
   `com.achunt.jukie.service` package. Don't conflate them.
 - **Developer token:** `app.js` reads `window.APPLE_MUSIC_DEVELOPER_TOKEN`; a local
-  `source/dev-token.local.js` supplies it and is git-/build-ignored (see `build-ignore`).
+  `source/dev-token.local.js` supplies it, loaded via a plain `<script>` tag in
+  `main.html` with an `onerror` fallback to `''` (so a missing file fails gracefully,
+  not with a broken app). It's git-ignored (`*.local.*` at the repo root) - but
+  **`build-ignore` does NOT actually exclude it from a real `palm-package` build**,
+  despite listing `*.local.js`. Verified by extracting a built `.ipk`: `jasminerunner.html`
+  and `spec/`, also in `build-ignore`, were both inside it too. That file is leftover
+  from this project's original Ruby/Rake build tooling - the modern SDK's
+  `palm-package.bat` (what `deploy-jukie.ps1` actually uses) doesn't read it at all. A
+  package built for personal use with an intentionally-empty token (so Settings starts
+  blank) has to physically move the file out of the directory before packaging - see
+  `dev-stuff/build-personal-package.ps1`.
 - Enyo leaks windows on desktop browser refresh; `index.html` has a `!window.PalmSystem`
   guard that tears down stale windows when run outside a device.
 - This codebase descends from the original Palm Music app, so many kind names and DB kinds

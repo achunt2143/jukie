@@ -83,6 +83,13 @@ Call any of these as `palm://com.achunt.jukie.service/<command>`:
 | `setVolume`  | `{ volume }` (0–100)                   | same                                                                               |
 | `getVolume`  | —                                      | `{ returnValue, volume }`                                                          |
 | `clearCache` | —                                      | `{ returnValue, removed, freedBytes }`                                             |
+| `setCredentials` | `{ webDeveloperToken, musicUserToken }` (either optional) | `{ returnValue }`                                     |
+
+`setCredentials` merges a Developer Token / Music User Token pasted into the app's
+Settings screen into `secrets.local.json`, so `jukie-drm` (which only ever reads that
+static file, with no way to receive credentials per-invocation otherwise) picks them up.
+Only the fields actually provided are written — a partial update never blanks an
+already-working credential.
 
 `state` is one of `idle | playing | paused | ended | error`. Calling `play` with the
 same URL/song while paused resumes in place rather than restarting.
