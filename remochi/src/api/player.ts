@@ -4,23 +4,32 @@
  * In v3, ALL playback methods and properties live directly on the
  * MusicKit instance (mk), not on a mk.player sub-object.
  *
- * Correct:   mk.pause()  mk.play()  mk.skipToNextItem()  mk.currentPlaybackTime
- * Wrong:     mk.player.pause()  mk.player.currentPlaybackTime  (undefined in v3)
+ * To enable skip next/prev, the entire queue must be passed to setQueue
+ * as a `songs` array of playParams IDs with startPosition for the
+ * clicked index.
+ *
+ * setQueue shape for library queue:
+ *   { songs: ['i.ABC', 'i.DEF', ...], startPosition: n, startPlaying: true }
  */
 import { getMusicKit } from './musickit';
-import type { Track, PlayParams } from '@/types/music';
+import type { Track } from '@/types/music';
 
-function trackToDescriptor(track: Track): Record<string, unknown> {
-  const pp = track.playParams;
-  if (pp?.kind && pp?.id) return { [pp.kind]: pp.id };
-  return { song: track.id };
+function trackId(track: Track): string {
+  // playParams.id is the correct ID for library tracks (e.g. 'i.AbCdEfG')
+  return track.playParams?.id ?? track.id;
 }
 
-export async function playTrack(track: Track, queue: Track[] = [track], _index = 0): Promise<void> {
+export async function playTrack(track: Track, queue: Track[] = [track], index = 0): Promise<void> {
   const mk = await getMusicKit();
-  const descriptor = trackToDescriptor(track);
-  console.log('[player] setQueue descriptor:', descriptor);
-  await mk.setQueue({ ...descriptor, startPlaying: true } as unknown as MusicKit.SetQueueOptions);
+
+  const ids = queue.map(trackId);
+  console.log('[player] setQueue songs:', ids, 'startPosition:', index);
+
+  await mk.setQueue({
+    songs: ids,
+    startPosition: index,
+    startPlaying: true,
+  } as unknown as MusicKit.SetQueueOptions);
 }
 
 export async function pause(): Promise<void> {
@@ -50,13 +59,11 @@ export async function skipPrev(): Promise<void> {
 
 export async function setShuffle(on: boolean): Promise<void> {
   const mk = await getMusicKit();
-  // PlayerShuffleMode: off = 0, songs = 1
   (mk as unknown as { shuffleMode: number }).shuffleMode = on ? 1 : 0;
 }
 
 export async function setRepeat(mode: 'none' | 'one' | 'all'): Promise<void> {
   const mk = await getMusicKit();
-  // PlayerRepeatMode: none = 0, one = 1, all = 2
   (mk as unknown as { repeatMode: number }).repeatMode =
     mode === 'none' ? 0 : mode === 'one' ? 1 : 2;
 }
