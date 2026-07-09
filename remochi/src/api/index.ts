@@ -1,9 +1,7 @@
 /**
- * Jukie API service layer.
- *
- * This module re-exports the three service areas. Swap the implementations
- * inside library.ts / search.ts / player.ts without touching any view code.
+ * Jukie API — re-exports all service areas.
  */
+export * from './auth';
 export * from './library';
 export * from './search';
 export * from './player';

@@ -1,5 +1,18 @@
-import React, { createContext, useContext, useReducer } from 'react';
+/**
+ * PlayerStore — React context backed by real MusicKit player events.
+ *
+ * Subscribes to MusicKit events on mount and keeps local state in sync:
+ *   - playbackStateDidChange  → isPlaying
+ *   - nowPlayingItemDidChange → currentTrack
+ *   - playbackTimeDidChange   → positionMs
+ *
+ * Dispatch actions still exist for optimistic UI updates (e.g. pressing
+ * the skip button before the event fires).
+ */
+import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import type { PlayerState, Track } from '@/types/music';
+import { addPlayerListener, removePlayerListener } from '@/api/player';
+import { getMusicKit } from '@/api/musickit';
 
 type Action =
   | { type: 'PLAY'; track: Track; queue: Track[]; index: number }
@@ -9,7 +22,11 @@ type Action =
   | { type: 'NEXT' }
   | { type: 'PREV' }
   | { type: 'TOGGLE_SHUFFLE' }
-  | { type: 'CYCLE_REPEAT' };
+  | { type: 'CYCLE_REPEAT' }
+  // MusicKit event-driven updates
+  | { type: 'MK_NOW_PLAYING'; track: Track | null }
+  | { type: 'MK_PLAYBACK_STATE'; isPlaying: boolean }
+  | { type: 'MK_TIME'; positionMs: number };
 
 const initial: PlayerState = {
   currentTrack: null,
@@ -20,6 +37,20 @@ const initial: PlayerState = {
   shuffle: false,
   repeat: 'none',
 };
+
+function mkItemToTrack(item: MusicKit.MediaItem): Track {
+  const a = item.attributes;
+  return {
+    id: item.id,
+    title: a.name,
+    artist: a.artistName,
+    album: a.albumName,
+    albumArtUrl: a.artwork?.url
+      .replace('{w}', '300')
+      .replace('{h}', '300'),
+    durationMs: a.durationInMillis,
+  };
+}
 
 function reducer(state: PlayerState, action: Action): PlayerState {
   switch (action.type) {
@@ -44,6 +75,12 @@ function reducer(state: PlayerState, action: Action): PlayerState {
       return { ...state, shuffle: !state.shuffle };
     case 'CYCLE_REPEAT':
       return { ...state, repeat: state.repeat === 'none' ? 'all' : state.repeat === 'all' ? 'one' : 'none' };
+    case 'MK_NOW_PLAYING':
+      return { ...state, currentTrack: action.track };
+    case 'MK_PLAYBACK_STATE':
+      return { ...state, isPlaying: action.isPlaying };
+    case 'MK_TIME':
+      return { ...state, positionMs: action.positionMs };
     default:
       return state;
   }
@@ -53,7 +90,46 @@ const PlayerContext = createContext<{ state: PlayerState; dispatch: React.Dispat
 
 export function PlayerStoreProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initial);
-  return <PlayerContext.Provider value={{ state, dispatch }}>{children}</PlayerContext.Provider>;
+
+  useEffect(() => {
+    // MusicKit playback state: 2 = playing, others = not playing
+    const onPlaybackState = (event: unknown) => {
+      const e = event as { state: number };
+      dispatch({ type: 'MK_PLAYBACK_STATE', isPlaying: e.state === 2 });
+    };
+
+    const onNowPlaying = () => {
+      getMusicKit().then((mk) => {
+        const item = mk.player.nowPlayingItem;
+        dispatch({ type: 'MK_NOW_PLAYING', track: item ? mkItemToTrack(item) : null });
+      });
+    };
+
+    const onTimeChange = () => {
+      getMusicKit().then((mk) => {
+        dispatch({
+          type: 'MK_TIME',
+          positionMs: mk.player.currentPlaybackTime * 1000,
+        });
+      });
+    };
+
+    addPlayerListener('playbackStateDidChange', onPlaybackState);
+    addPlayerListener('nowPlayingItemDidChange', onNowPlaying);
+    addPlayerListener('playbackTimeDidChange', onTimeChange);
+
+    return () => {
+      removePlayerListener('playbackStateDidChange', onPlaybackState);
+      removePlayerListener('nowPlayingItemDidChange', onNowPlaying);
+      removePlayerListener('playbackTimeDidChange', onTimeChange);
+    };
+  }, []);
+
+  return (
+    <PlayerContext.Provider value={{ state, dispatch }}>
+      {children}
+    </PlayerContext.Provider>
+  );
 }
 
 export function usePlayer() {
