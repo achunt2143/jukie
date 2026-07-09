@@ -2,42 +2,7 @@
  * Library service — Apple Music personal library via MusicKit JS v3.
  */
 import { getMusicKit } from './musickit';
-import type { Track, Album, Artist, Genre, Playlist } from '@/types/music';
-
-// ---------------------------------------------------------------------------
-// Raw item cache
-// ---------------------------------------------------------------------------
-const rawItemCache = new Map<string, MusicKit.MediaItem>();
-
-export function getRawItem(id: string): MusicKit.MediaItem | undefined {
-  return rawItemCache.get(id);
-}
-
-/**
- * Batch-fetch raw MusicKit.MediaItem objects by library song ID and cache them.
- * Used by player.ts to resolve cache misses before calling setQueue.
- * Apple's API accepts up to 300 ids per request.
- */
-export async function fetchRawItemsByIds(ids: string[]): Promise<void> {
-  if (ids.length === 0) return;
-  const mk = await getMusicKit();
-  // Chunk into batches of 100 to stay within API limits.
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += 100) {
-    chunks.push(ids.slice(i, i + 100));
-  }
-  await Promise.all(
-    chunks.map(async (chunk) => {
-      const res = await mk.api.music('/v1/me/library/songs', {
-        ids: chunk.join(','),
-        limit: chunk.length,
-      }) as { data: { data: MusicKit.MediaItem[] } };
-      for (const item of res.data?.data ?? []) {
-        rawItemCache.set(item.id, item);
-      }
-    })
-  );
-}
+import type { Track, Album, Artist, Genre, Playlist, PlayParams } from '@/types/music';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,7 +21,6 @@ async function fetchAllPages<T>(
   const results: T[] = [];
   let offset = 0;
   const limit = 100;
-
   while (true) {
     const res = await mk.api.music(path, { ...params, limit, offset }) as {
       data: { data: T[]; next?: string }
@@ -66,7 +30,6 @@ async function fetchAllPages<T>(
     if (!res.data?.next || items.length < limit) break;
     offset += limit;
   }
-
   return results;
 }
 
@@ -77,7 +40,6 @@ async function fetchAllPages<T>(
 export async function getTracks(): Promise<Track[]> {
   const mk = await getMusicKit();
   const items = await fetchAllPages<MusicKit.MediaItem>(mk, '/v1/me/library/songs');
-  for (const item of items) rawItemCache.set(item.id, item);
   return items.map(itemToTrack);
 }
 
@@ -93,6 +55,7 @@ export function itemToTrack(item: MusicKit.MediaItem): Track {
     trackNumber: a.trackNumber,
     discNumber: a.discNumber,
     genre: a.genreNames?.[0],
+    playParams: (a as unknown as { playParams?: PlayParams }).playParams,
   };
 }
 
@@ -122,7 +85,6 @@ export async function getAlbumById(id: string): Promise<Album | null> {
   const item = res.data?.data?.[0];
   if (!item) return null;
   const rawTracks = (item.relationships?.tracks as { data: MusicKit.MediaItem[] } | undefined)?.data ?? [];
-  for (const t of rawTracks) rawItemCache.set(t.id, t);
   return {
     id: item.id,
     title: item.attributes.name as string,
@@ -174,7 +136,7 @@ export async function getArtistById(id: string): Promise<Artist | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Genres — derived from the already-fetched track list, no second getTracks() call
+// Genres — derived from tracks, no extra network call
 // ---------------------------------------------------------------------------
 
 export async function getGenres(): Promise<Genre[]> {
@@ -224,7 +186,6 @@ export async function getPlaylistById(id: string): Promise<Playlist | null> {
   const item = res.data?.data?.[0];
   if (!item) return null;
   const rawTracks = (item.relationships?.tracks as { data: MusicKit.MediaItem[] } | undefined)?.data ?? [];
-  for (const t of rawTracks) rawItemCache.set(t.id, t);
   return {
     id: item.id,
     name: item.attributes.name as string,

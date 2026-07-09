@@ -1,3 +1,11 @@
+export interface PlayParams {
+  id: string;
+  kind: string;        // e.g. 'song', 'musicVideo'
+  isLibrary?: boolean;
+  catalogId?: string;
+  globalId?: string;
+}
+
 export interface Track {
   id: string;
   title: string;
@@ -8,6 +16,7 @@ export interface Track {
   trackNumber?: number;
   discNumber?: number;
   genre?: string;
+  playParams?: PlayParams; // raw MusicKit playParams — required for library playback
 }
 
 export interface Album {

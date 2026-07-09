@@ -1,37 +1,46 @@
 /**
- * Player service — full MusicKit JS v3 playback.
+ * Player service — MusicKit JS v3 playback via playParams.
  *
- * setQueue({ items }) must receive actual MusicKit.MediaItem objects.
- * We pull them from rawItemCache (populated by library.ts on fetch).
- * Any cache miss is resolved with a live fetch before queuing.
+ * The ONLY correct way to play library tracks in MusicKit JS v3 is via
+ * the item's own playParams object (item.attributes.playParams).
+ *
+ * playParams shape: { id: string, kind: string, isLibrary?: boolean }
+ *
+ * setQueue accepts { [kind]: id } derived from playParams, e.g.:
+ *   { song: 'i.AbCdEfG' }   <- library song
+ *   { song: '1234567890' }  <- catalog song
+ *
+ * For a queue of multiple tracks, we use startPlaying (v3 preferred over
+ * autoplay) so playback begins immediately after the queue is set.
+ *
+ * Reference: https://forums.developer.apple.com/forums/thread/704565
  */
 import { getMusicKit } from './musickit';
-import { getRawItem, fetchRawItemsByIds } from './library';
 import type { Track } from '@/types/music';
+
+function trackToQueueDescriptor(track: Track): Record<string, unknown> {
+  const pp = track.playParams;
+  if (pp?.kind && pp?.id) {
+    // Use playParams directly: { [kind]: id }
+    return { [pp.kind]: pp.id };
+  }
+  // Fallback for catalog tracks without explicit playParams
+  return { song: track.id };
+}
 
 export async function playTrack(track: Track, queue: Track[] = [track], index = 0): Promise<void> {
   const mk = await getMusicKit();
 
-  // Find which IDs are missing from the cache.
-  const missingIds = queue.map((t) => t.id).filter((id) => !getRawItem(id));
+  const descriptor = trackToQueueDescriptor(track);
+  console.log('[player] setQueue descriptor:', descriptor, 'playParams:', track.playParams);
 
-  // Fetch any missing items in one batch call, which also populates the cache.
-  if (missingIds.length > 0) {
-    await fetchRawItemsByIds(missingIds);
-  }
-
-  // Now resolve the full queue from cache.
-  const rawItems = queue
-    .map((t) => getRawItem(t.id))
-    .filter((item): item is MusicKit.MediaItem => item !== undefined);
-
-  if (rawItems.length === 0) {
-    console.error('[player] Could not resolve any tracks — check library permissions.');
-    return;
-  }
-
-  await mk.setQueue({ items: rawItems, startPosition: index } as unknown as MusicKit.SetQueueOptions);
-  await mk.player.play();
+  // For a single track or start of a queue, set the queue with startPlaying.
+  // startPlaying is the v3 replacement for the deprecated autoplay property.
+  await mk.setQueue({
+    ...descriptor,
+    startPosition: 0,
+    startPlaying: true,
+  } as unknown as MusicKit.SetQueueOptions);
 }
 
 export async function pause(): Promise<void> {
