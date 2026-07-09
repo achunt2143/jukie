@@ -1,3 +1,7 @@
+/**
+ * PlayerBar — transport controls wired to MusicKit via playerApi.
+ * Store state is driven entirely by MusicKit events, not optimistic dispatch.
+ */
 import React, { useRef } from 'react';
 import { Button, Slider } from 'remochi';
 import { usePlayer } from '@/store/PlayerStore';
@@ -12,13 +16,11 @@ export default function PlayerBar() {
   const { state, dispatch } = usePlayer();
   const { currentTrack, isPlaying, positionMs, shuffle, repeat } = state;
 
-  // While the user is dragging the scrubber we suppress rAF updates so the
-  // slider doesn't jump back to the real playback position mid-drag.
   const isSeeking = useRef(false);
-  const seekValue = useRef(0);
+  const seekMs = useRef(0);
 
-  const progress = currentTrack
-    ? (isSeeking.current ? seekValue.current : (positionMs / currentTrack.durationMs) * 100)
+  const sliderValue = currentTrack && currentTrack.durationMs > 0
+    ? (positionMs / currentTrack.durationMs) * 100
     : 0;
 
   return (
@@ -33,20 +35,18 @@ export default function PlayerBar() {
       {/* Track info */}
       <div style={{ minWidth: 180 }}>
         <div style={{ fontWeight: 600, fontSize: 14 }}>{currentTrack?.title ?? '—'}</div>
-        <div style={{ fontSize: 12, opacity: 0.6 }}>{currentTrack?.artist}</div>
+        <div style={{ fontSize: 12, opacity: 0.6 }}>{currentTrack?.artist ?? ''}</div>
       </div>
 
-      {/* Transport */}
-      <Button onClick={() => { dispatch({ type: 'PREV' }); playerApi.skipPrev(); }}>⏮</Button>
-      <Button
-        onClick={() => {
-          if (isPlaying) { dispatch({ type: 'PAUSE' }); playerApi.pause(); }
-          else           { dispatch({ type: 'RESUME' }); playerApi.resume(); }
-        }}
-      >
+      {/* Transport — call API only, MusicKit events update the store */}
+      <Button onClick={() => playerApi.skipPrev()}>⏮</Button>
+      <Button onClick={() => {
+        if (isPlaying) playerApi.pause();
+        else playerApi.resume();
+      }}>
         {isPlaying ? '⏸' : '▶'}
       </Button>
-      <Button onClick={() => { dispatch({ type: 'NEXT' }); playerApi.skipNext(); }}>⏭</Button>
+      <Button onClick={() => playerApi.skipNext()}>⏭</Button>
 
       {/* Scrubber */}
       <span style={{ fontSize: 12, opacity: 0.6 }}>{fmt(positionMs)}</span>
@@ -55,21 +55,14 @@ export default function PlayerBar() {
         onMouseDown={() => { isSeeking.current = true; }}
         onMouseUp={() => {
           if (!currentTrack) { isSeeking.current = false; return; }
-          const ms = (seekValue.current / 100) * currentTrack.durationMs;
-          dispatch({ type: 'SEEK', positionMs: ms });
-          playerApi.seek(ms);
+          playerApi.seek(seekMs.current);
           isSeeking.current = false;
         }}
       >
         <Slider
-          value={progress}
-          onChange={(v) => {
-            seekValue.current = v;
-            // Keep the visual slider moving during drag without dispatching
-            // a MK_TIME update on every frame.
-            if (isSeeking.current && currentTrack) {
-              dispatch({ type: 'SEEK', positionMs: (v / 100) * currentTrack.durationMs });
-            }
+          value={isSeeking.current ? (seekMs.current / (currentTrack?.durationMs ?? 1)) * 100 : sliderValue}
+          onChange={(v: number) => {
+            seekMs.current = (v / 100) * (currentTrack?.durationMs ?? 0);
           }}
         />
       </div>
@@ -77,7 +70,7 @@ export default function PlayerBar() {
         {currentTrack ? fmt(currentTrack.durationMs) : '--:--'}
       </span>
 
-      {/* Modes */}
+      {/* Shuffle & Repeat — dispatch to local store + sync to MusicKit */}
       <Button
         variant={shuffle ? 'blue' : 'normal'}
         onClick={() => {
@@ -89,8 +82,8 @@ export default function PlayerBar() {
       <Button
         variant={repeat !== 'none' ? 'blue' : 'normal'}
         onClick={() => {
-          dispatch({ type: 'CYCLE_REPEAT' });
           const next = repeat === 'none' ? 'all' : repeat === 'all' ? 'one' : 'none';
+          dispatch({ type: 'CYCLE_REPEAT' });
           playerApi.setRepeat(next);
         }}
       >{repeat === 'one' ? '🔂' : '🔁'}</Button>

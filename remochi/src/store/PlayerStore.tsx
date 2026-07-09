@@ -1,22 +1,19 @@
 /**
- * PlayerStore — React context backed by real MusicKit player events.
+ * PlayerStore — MusicKit JS v3 events are the single source of truth.
  *
- * Time tracking uses a requestAnimationFrame loop instead of the unreliable
- * playbackTimeDidChange MusicKit event. The loop runs only while isPlaying
- * is true and is cancelled on pause/unmount.
+ * playbackStateDidChange  → isPlaying (drives rAF loop)
+ * nowPlayingItemDidChange → currentTrack (with playParams + durationMs)
+ *
+ * Optimistic UI dispatch is intentionally removed — MusicKit fires these
+ * events fast enough (~immediate) that there is no perceivable lag.
  */
 import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
-import type { PlayerState, Track } from '@/types/music';
+import type { PlayerState, Track, PlayParams } from '@/types/music';
 import { addPlayerListener, removePlayerListener } from '@/api/player';
 import { getMusicKit } from '@/api/musickit';
 
 type Action =
-  | { type: 'PLAY'; track: Track; queue: Track[]; index: number }
-  | { type: 'PAUSE' }
-  | { type: 'RESUME' }
-  | { type: 'SEEK'; positionMs: number }
-  | { type: 'NEXT' }
-  | { type: 'PREV' }
+  | { type: 'SET_QUEUE'; queue: Track[] }
   | { type: 'TOGGLE_SHUFFLE' }
   | { type: 'CYCLE_REPEAT' }
   | { type: 'MK_NOW_PLAYING'; track: Track | null }
@@ -35,43 +32,28 @@ const initial: PlayerState = {
 
 function mkItemToTrack(item: MusicKit.MediaItem): Track {
   const a = item.attributes;
+  const pp = (a as unknown as { playParams?: PlayParams }).playParams;
   return {
     id: item.id,
     title: a.name,
     artist: a.artistName,
     album: a.albumName,
-    albumArtUrl: a.artwork?.url
-      .replace('{w}', '300')
-      .replace('{h}', '300'),
+    albumArtUrl: a.artwork?.url.replace('{w}', '300').replace('{h}', '300'),
     durationMs: a.durationInMillis,
+    playParams: pp,
   };
 }
 
 function reducer(state: PlayerState, action: Action): PlayerState {
   switch (action.type) {
-    case 'PLAY':
-      return { ...state, currentTrack: action.track, queue: action.queue, queueIndex: action.index, isPlaying: true, positionMs: 0 };
-    case 'PAUSE':
-      return { ...state, isPlaying: false };
-    case 'RESUME':
-      return { ...state, isPlaying: true };
-    case 'SEEK':
-      return { ...state, positionMs: action.positionMs };
-    case 'NEXT': {
-      const next = state.queueIndex + 1;
-      if (next >= state.queue.length) return state;
-      return { ...state, queueIndex: next, currentTrack: state.queue[next], positionMs: 0 };
-    }
-    case 'PREV': {
-      const prev = Math.max(0, state.queueIndex - 1);
-      return { ...state, queueIndex: prev, currentTrack: state.queue[prev], positionMs: 0 };
-    }
+    case 'SET_QUEUE':
+      return { ...state, queue: action.queue };
     case 'TOGGLE_SHUFFLE':
       return { ...state, shuffle: !state.shuffle };
     case 'CYCLE_REPEAT':
       return { ...state, repeat: state.repeat === 'none' ? 'all' : state.repeat === 'all' ? 'one' : 'none' };
     case 'MK_NOW_PLAYING':
-      return { ...state, currentTrack: action.track };
+      return { ...state, currentTrack: action.track, positionMs: 0 };
     case 'MK_PLAYBACK_STATE':
       return { ...state, isPlaying: action.isPlaying };
     case 'MK_TIME':
@@ -88,13 +70,10 @@ export function PlayerStoreProvider({ children }: { children: React.ReactNode })
   const isPlayingRef = useRef(false);
   const rafRef = useRef<number | null>(null);
 
-  // Keep a ref in sync with state.isPlaying so the rAF loop can read it
-  // without a stale closure.
   isPlayingRef.current = state.isPlaying;
 
   // ---------------------------------------------------------------------------
-  // rAF-based time polling — smooth, frame-accurate progress tracking.
-  // Runs only while playing, cancelled immediately on pause or unmount.
+  // rAF time polling — only runs while MusicKit reports playing
   // ---------------------------------------------------------------------------
   useEffect(() => {
     function tick() {
@@ -131,19 +110,24 @@ export function PlayerStoreProvider({ children }: { children: React.ReactNode })
   }, [state.isPlaying]);
 
   // ---------------------------------------------------------------------------
-  // MusicKit event listeners
+  // MusicKit event listeners — single source of truth for all playback state
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    // playbackState 2 = playing in MusicKit JS v3
     const onPlaybackState = (event: unknown) => {
+      // MusicKit JS v3 PlaybackStates: 0=none,1=loading,2=playing,3=paused,
+      // 4=stopped,5=ended,6=seeking,7=waiting,8=stalled,9=completed,10=interrupted
       const e = event as { state: number };
-      dispatch({ type: 'MK_PLAYBACK_STATE', isPlaying: e.state === 2 });
+      const playing = e.state === 2; // Playing
+      dispatch({ type: 'MK_PLAYBACK_STATE', isPlaying: playing });
     };
 
     const onNowPlaying = () => {
       getMusicKit().then((mk) => {
         const item = mk.player.nowPlayingItem;
-        dispatch({ type: 'MK_NOW_PLAYING', track: item ? mkItemToTrack(item) : null });
+        dispatch({
+          type: 'MK_NOW_PLAYING',
+          track: item ? mkItemToTrack(item) : null,
+        });
       });
     };
 
