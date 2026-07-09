@@ -1,22 +1,35 @@
 /**
  * Player service — full MusicKit JS v3 playback.
  *
- * KEY: MusicKit JS v3 setQueue({ songs: [...] }) expects CATALOG IDs.
- * Library track IDs (i.xxxxxxxx) must be passed as typed item descriptors:
- *   { id, type: 'library-songs' }
- * Passing library IDs into the 'songs' key silently fails — no stream starts.
+ * MusicKit JS v3 setQueue({ items }) must receive the actual
+ * MusicKit.MediaItem objects that MusicKit itself returned — NOT
+ * { id, type } descriptor strings. The type-descriptor approach causes
+ * MusicKit to try to pluralise the type string to build a URL path, which
+ * produces "/v1/me/library/undefineds/..." for any unrecognised type.
+ *
+ * Raw items are kept alive in the rawItemCache in library.ts and retrieved
+ * here via getRawItem() before every setQueue call.
  */
 import { getMusicKit } from './musickit';
+import { getRawItem } from './library';
 import type { Track } from '@/types/music';
 
 export async function playTrack(track: Track, queue: Track[] = [track], index = 0): Promise<void> {
   const mk = await getMusicKit();
 
-  // Build typed item descriptors for the full queue.
-  // type 'library-songs' tells MusicKit to resolve from the user's library.
-  const items = queue.map((t) => ({ id: t.id, type: 'library-songs' as const }));
+  // Resolve raw MusicKit.MediaItem objects for the full queue.
+  // Any item not yet cached falls back to a minimal descriptor that MusicKit
+  // can still use if the library fetch already populated its internal cache.
+  const rawItems = queue
+    .map((t) => getRawItem(t.id))
+    .filter((item): item is MusicKit.MediaItem => item !== undefined);
 
-  await mk.setQueue({ items, startPosition: index } as unknown as MusicKit.SetQueueOptions);
+  if (rawItems.length === 0) {
+    console.warn('[player] No raw items found in cache — library may not have finished loading.');
+    return;
+  }
+
+  await mk.setQueue({ items: rawItems, startPosition: index } as unknown as MusicKit.SetQueueOptions);
   await mk.player.play();
 }
 

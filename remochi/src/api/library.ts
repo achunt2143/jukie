@@ -1,15 +1,19 @@
 /**
  * Library service — Apple Music personal library via MusicKit JS v3.
- *
- * All endpoints hit the user's iCloud Music Library, so MusicKit must be
- * authorized before any of these are called. The LibraryStore handles that
- * guard via AuthStore.
- *
- * Pagination: Apple's library endpoints return up to 100 items per page.
- * Each helper fetches all pages automatically.
  */
 import { getMusicKit } from './musickit';
 import type { Track, Album, Artist, Genre, Playlist } from '@/types/music';
+
+// ---------------------------------------------------------------------------
+// Raw item cache — keeps MusicKit.MediaItem objects alive after fetch so
+// player.ts can pass them directly into setQueue({ items }) without
+// needing to re-fetch or construct type descriptor strings.
+// ---------------------------------------------------------------------------
+const rawItemCache = new Map<string, MusicKit.MediaItem>();
+
+export function getRawItem(id: string): MusicKit.MediaItem | undefined {
+  return rawItemCache.get(id);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -49,10 +53,16 @@ async function fetchAllPages<T>(
 export async function getTracks(): Promise<Track[]> {
   const mk = await getMusicKit();
   const items = await fetchAllPages<MusicKit.MediaItem>(mk, '/v1/me/library/songs');
+
+  // Cache every raw item so playTrack can retrieve them later.
+  for (const item of items) {
+    rawItemCache.set(item.id, item);
+  }
+
   return items.map(itemToTrack);
 }
 
-function itemToTrack(item: MusicKit.MediaItem): Track {
+export function itemToTrack(item: MusicKit.MediaItem): Track {
   const a = item.attributes;
   return {
     id: item.id,
@@ -94,6 +104,7 @@ export async function getAlbumById(id: string): Promise<Album | null> {
   if (!item) return null;
 
   const rawTracks = (item.relationships?.tracks as { data: MusicKit.MediaItem[] } | undefined)?.data ?? [];
+  for (const t of rawTracks) rawItemCache.set(t.id, t);
 
   return {
     id: item.id,
@@ -118,7 +129,7 @@ export async function getArtists(): Promise<Artist[]> {
   return items.map((item) => ({
     id: item.id,
     name: item.attributes.name as string,
-    albumCount: 0, // populated lazily in getArtistById
+    albumCount: 0,
   }));
 }
 
@@ -154,8 +165,6 @@ export async function getArtistById(id: string): Promise<Artist | null> {
 // ---------------------------------------------------------------------------
 
 export async function getGenres(): Promise<Genre[]> {
-  const mk = await getMusicKit();
-  // Library songs endpoint is the source of truth for genres in a user's library.
   const tracks = await getTracks();
   const map = new Map<string, number>();
   for (const t of tracks) {
@@ -169,7 +178,6 @@ export async function getGenres(): Promise<Genre[]> {
 }
 
 export async function getTracksByGenre(genreId: string): Promise<Track[]> {
-  // genreId is "genre-{index}" — resolve by matching genre name from full track list.
   const tracks = await getTracks();
   const genres = await getGenres();
   const genre = genres.find((g) => g.id === genreId);
@@ -204,6 +212,7 @@ export async function getPlaylistById(id: string): Promise<Playlist | null> {
   if (!item) return null;
 
   const rawTracks = (item.relationships?.tracks as { data: MusicKit.MediaItem[] } | undefined)?.data ?? [];
+  for (const t of rawTracks) rawItemCache.set(t.id, t);
 
   return {
     id: item.id,
