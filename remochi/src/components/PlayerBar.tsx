@@ -13,7 +13,8 @@ export default function PlayerBar() {
   const { currentTrack, isPlaying, positionMs, shuffle, repeat } = state;
 
   const isSeeking = useRef(false);
-  const seekMs = useRef(0);
+  // null = not currently dragging; number = ms position during drag
+  const seekMs = useRef<number | null>(null);
 
   const duration = currentTrack?.durationMs ?? 0;
   const sliderValue = duration > 0
@@ -51,23 +52,27 @@ export default function PlayerBar() {
         style={{ flex: 1, margin: '0 32px' }}
         onMouseDown={() => {
           isSeeking.current = true;
-          seekMs.current = positionMs;
+          seekMs.current = positionMs; // capture current position as drag start
         }}
         onMouseUp={() => {
           isSeeking.current = false;
-          playerApi.seek(seekMs.current);
+          // seekMs.current may be 0 (valid!) so check for null explicitly
+          if (seekMs.current !== null) {
+            playerApi.seek(seekMs.current);
+          }
+          seekMs.current = null;
         }}
       >
         <Slider
-          value={isSeeking.current
-            ? Math.min(100, (seekMs.current / (duration || 1)) * 100)
-            : sliderValue
+          value={
+            isSeeking.current && seekMs.current !== null
+              ? Math.min(100, (seekMs.current / (duration || 1)) * 100)
+              : sliderValue
           }
           onChange={(v: number) => {
             const ms = (v / 100) * duration;
-            seekMs.current = ms;
+            seekMs.current = ms; // always update, even when ms === 0
             if (isSeeking.current) {
-              // Update display during drag without seeking MK
               dispatch({ type: 'MK_TIME', positionMs: ms });
             }
           }}
