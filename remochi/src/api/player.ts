@@ -1,81 +1,69 @@
 /**
- * Player service — MusicKit JS v3 playback via playParams.
+ * Player service — MusicKit JS v3.
  *
- * The ONLY correct way to play library tracks in MusicKit JS v3 is via
- * the item's own playParams object (item.attributes.playParams).
+ * In v3, ALL playback methods and properties live directly on the
+ * MusicKit instance (mk), not on a mk.player sub-object.
  *
- * playParams shape: { id: string, kind: string, isLibrary?: boolean }
- *
- * setQueue accepts { [kind]: id } derived from playParams, e.g.:
- *   { song: 'i.AbCdEfG' }   <- library song
- *   { song: '1234567890' }  <- catalog song
- *
- * For a queue of multiple tracks, we use startPlaying (v3 preferred over
- * autoplay) so playback begins immediately after the queue is set.
- *
- * Reference: https://forums.developer.apple.com/forums/thread/704565
+ * Correct:   mk.pause()  mk.play()  mk.skipToNextItem()  mk.currentPlaybackTime
+ * Wrong:     mk.player.pause()  mk.player.currentPlaybackTime  (undefined in v3)
  */
 import { getMusicKit } from './musickit';
-import type { Track } from '@/types/music';
+import type { Track, PlayParams } from '@/types/music';
 
-function trackToQueueDescriptor(track: Track): Record<string, unknown> {
+function trackToDescriptor(track: Track): Record<string, unknown> {
   const pp = track.playParams;
-  if (pp?.kind && pp?.id) {
-    // Use playParams directly: { [kind]: id }
-    return { [pp.kind]: pp.id };
-  }
-  // Fallback for catalog tracks without explicit playParams
+  if (pp?.kind && pp?.id) return { [pp.kind]: pp.id };
   return { song: track.id };
 }
 
-export async function playTrack(track: Track, queue: Track[] = [track], index = 0): Promise<void> {
+export async function playTrack(track: Track, queue: Track[] = [track], _index = 0): Promise<void> {
   const mk = await getMusicKit();
-
-  const descriptor = trackToQueueDescriptor(track);
-  console.log('[player] setQueue descriptor:', descriptor, 'playParams:', track.playParams);
-
-  // For a single track or start of a queue, set the queue with startPlaying.
-  // startPlaying is the v3 replacement for the deprecated autoplay property.
-  await mk.setQueue({
-    ...descriptor,
-    startPosition: 0,
-    startPlaying: true,
-  } as unknown as MusicKit.SetQueueOptions);
+  const descriptor = trackToDescriptor(track);
+  console.log('[player] setQueue descriptor:', descriptor);
+  await mk.setQueue({ ...descriptor, startPlaying: true } as unknown as MusicKit.SetQueueOptions);
 }
 
 export async function pause(): Promise<void> {
   const mk = await getMusicKit();
-  mk.player.pause();
+  mk.pause();
 }
 
 export async function resume(): Promise<void> {
   const mk = await getMusicKit();
-  await mk.player.play();
+  await mk.play();
 }
 
 export async function seek(positionMs: number): Promise<void> {
   const mk = await getMusicKit();
-  await mk.player.seekToTime(positionMs / 1000);
+  await mk.seekToTime(positionMs / 1000);
 }
 
 export async function skipNext(): Promise<void> {
   const mk = await getMusicKit();
-  await mk.player.skipToNextItem();
+  await mk.skipToNextItem();
 }
 
 export async function skipPrev(): Promise<void> {
   const mk = await getMusicKit();
-  await mk.player.skipToPreviousItem();
+  await mk.skipToPreviousItem();
 }
 
 export async function setShuffle(on: boolean): Promise<void> {
   const mk = await getMusicKit();
-  mk.player.shuffleMode = on ? 1 : 0;
+  // PlayerShuffleMode: off = 0, songs = 1
+  (mk as unknown as { shuffleMode: number }).shuffleMode = on ? 1 : 0;
 }
 
 export async function setRepeat(mode: 'none' | 'one' | 'all'): Promise<void> {
   const mk = await getMusicKit();
-  mk.player.repeatMode = mode === 'none' ? 0 : mode === 'one' ? 1 : 2;
+  // PlayerRepeatMode: none = 0, one = 1, all = 2
+  (mk as unknown as { repeatMode: number }).repeatMode =
+    mode === 'none' ? 0 : mode === 'one' ? 1 : 2;
+}
+
+export async function getCurrentTime(): Promise<number> {
+  const mk = await getMusicKit();
+  return (mk as unknown as { currentPlaybackTime: number }).currentPlaybackTime * 1000;
 }
 
 export type PlayerEventCallback = (event: unknown) => void;
