@@ -1,24 +1,18 @@
-/**
- * PlayerStore — MusicKit JS v3 events are the single source of truth.
- *
- * playbackStateDidChange  → isPlaying (drives rAF loop)
- * nowPlayingItemDidChange → currentTrack (with playParams + durationMs)
- *
- * Optimistic UI dispatch is intentionally removed — MusicKit fires these
- * events fast enough (~immediate) that there is no perceivable lag.
- */
 import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import type { PlayerState, Track, PlayParams } from '@/types/music';
 import { addPlayerListener, removePlayerListener } from '@/api/player';
 import { getMusicKit } from '@/api/musickit';
 
 type Action =
+  | { type: 'SET_CURRENT_TRACK'; track: Track }   // optimistic: set immediately on click
   | { type: 'SET_QUEUE'; queue: Track[] }
   | { type: 'TOGGLE_SHUFFLE' }
   | { type: 'CYCLE_REPEAT' }
-  | { type: 'MK_NOW_PLAYING'; track: Track | null }
+  | { type: 'MK_NOW_PLAYING'; track: Track | null } // MK confirmation/correction
   | { type: 'MK_PLAYBACK_STATE'; isPlaying: boolean }
   | { type: 'MK_TIME'; positionMs: number };
+
+export type PlayerAction = Action;
 
 const initial: PlayerState = {
   currentTrack: null,
@@ -46,6 +40,9 @@ function mkItemToTrack(item: MusicKit.MediaItem): Track {
 
 function reducer(state: PlayerState, action: Action): PlayerState {
   switch (action.type) {
+    case 'SET_CURRENT_TRACK':
+      // Immediate optimistic update — shows title/artist/duration instantly
+      return { ...state, currentTrack: action.track, positionMs: 0, isPlaying: true };
     case 'SET_QUEUE':
       return { ...state, queue: action.queue };
     case 'TOGGLE_SHUFFLE':
@@ -53,6 +50,8 @@ function reducer(state: PlayerState, action: Action): PlayerState {
     case 'CYCLE_REPEAT':
       return { ...state, repeat: state.repeat === 'none' ? 'all' : state.repeat === 'all' ? 'one' : 'none' };
     case 'MK_NOW_PLAYING':
+      // MK confirmed the item — update with authoritative data (may differ slightly)
+      if (!action.track) return { ...state, currentTrack: null, isPlaying: false, positionMs: 0 };
       return { ...state, currentTrack: action.track, positionMs: 0 };
     case 'MK_PLAYBACK_STATE':
       return { ...state, isPlaying: action.isPlaying };
@@ -72,9 +71,7 @@ export function PlayerStoreProvider({ children }: { children: React.ReactNode })
 
   isPlayingRef.current = state.isPlaying;
 
-  // ---------------------------------------------------------------------------
-  // rAF time polling — only runs while MusicKit reports playing
-  // ---------------------------------------------------------------------------
+  // rAF loop — polls currentPlaybackTime every frame while playing
   useEffect(() => {
     function tick() {
       if (!isPlayingRef.current) {
@@ -82,10 +79,10 @@ export function PlayerStoreProvider({ children }: { children: React.ReactNode })
         return;
       }
       getMusicKit().then((mk) => {
-        dispatch({
-          type: 'MK_TIME',
-          positionMs: mk.player.currentPlaybackTime * 1000,
-        });
+        const t = mk.player.currentPlaybackTime;
+        if (typeof t === 'number' && !isNaN(t)) {
+          dispatch({ type: 'MK_TIME', positionMs: t * 1000 });
+        }
       });
       rafRef.current = requestAnimationFrame(tick);
     }
@@ -109,16 +106,12 @@ export function PlayerStoreProvider({ children }: { children: React.ReactNode })
     };
   }, [state.isPlaying]);
 
-  // ---------------------------------------------------------------------------
-  // MusicKit event listeners — single source of truth for all playback state
-  // ---------------------------------------------------------------------------
+  // MusicKit event listeners
   useEffect(() => {
     const onPlaybackState = (event: unknown) => {
-      // MusicKit JS v3 PlaybackStates: 0=none,1=loading,2=playing,3=paused,
-      // 4=stopped,5=ended,6=seeking,7=waiting,8=stalled,9=completed,10=interrupted
       const e = event as { state: number };
-      const playing = e.state === 2; // Playing
-      dispatch({ type: 'MK_PLAYBACK_STATE', isPlaying: playing });
+      // 2 = Playing, 3 = Paused, 4 = Stopped, 5 = Ended
+      dispatch({ type: 'MK_PLAYBACK_STATE', isPlaying: e.state === 2 });
     };
 
     const onNowPlaying = () => {

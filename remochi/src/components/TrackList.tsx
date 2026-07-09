@@ -1,7 +1,3 @@
-/**
- * TrackList — click to play. No optimistic dispatch — MusicKit
- * nowPlayingItemDidChange updates currentTrack in the store.
- */
 import React from 'react';
 import { Badge } from 'remochi';
 import type { Track } from '@/types/music';
@@ -19,7 +15,7 @@ interface Props {
 }
 
 export default function TrackList({ tracks, onTrackClick }: Props) {
-  const { state } = usePlayer();
+  const { state, dispatch } = usePlayer();
 
   return (
     <div role="list">
@@ -30,6 +26,8 @@ export default function TrackList({ tracks, onTrackClick }: Props) {
             key={track.id}
             role="listitem"
             onClick={() => {
+              // Optimistic: show track info in PlayerBar immediately
+              dispatch({ type: 'SET_CURRENT_TRACK', track });
               if (onTrackClick) {
                 onTrackClick(track, i);
               } else {
