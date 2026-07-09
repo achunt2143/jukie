@@ -1,15 +1,11 @@
 /**
  * PlayerStore — React context backed by real MusicKit player events.
  *
- * Subscribes to MusicKit events on mount and keeps local state in sync:
- *   - playbackStateDidChange  → isPlaying
- *   - nowPlayingItemDidChange → currentTrack
- *   - playbackTimeDidChange   → positionMs
- *
- * Dispatch actions still exist for optimistic UI updates (e.g. pressing
- * the skip button before the event fires).
+ * Time tracking uses a requestAnimationFrame loop instead of the unreliable
+ * playbackTimeDidChange MusicKit event. The loop runs only while isPlaying
+ * is true and is cancelled on pause/unmount.
  */
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import type { PlayerState, Track } from '@/types/music';
 import { addPlayerListener, removePlayerListener } from '@/api/player';
 import { getMusicKit } from '@/api/musickit';
@@ -23,7 +19,6 @@ type Action =
   | { type: 'PREV' }
   | { type: 'TOGGLE_SHUFFLE' }
   | { type: 'CYCLE_REPEAT' }
-  // MusicKit event-driven updates
   | { type: 'MK_NOW_PLAYING'; track: Track | null }
   | { type: 'MK_PLAYBACK_STATE'; isPlaying: boolean }
   | { type: 'MK_TIME'; positionMs: number };
@@ -90,9 +85,56 @@ const PlayerContext = createContext<{ state: PlayerState; dispatch: React.Dispat
 
 export function PlayerStoreProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initial);
+  const isPlayingRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
 
+  // Keep a ref in sync with state.isPlaying so the rAF loop can read it
+  // without a stale closure.
+  isPlayingRef.current = state.isPlaying;
+
+  // ---------------------------------------------------------------------------
+  // rAF-based time polling — smooth, frame-accurate progress tracking.
+  // Runs only while playing, cancelled immediately on pause or unmount.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    // MusicKit playback state: 2 = playing, others = not playing
+    function tick() {
+      if (!isPlayingRef.current) {
+        rafRef.current = null;
+        return;
+      }
+      getMusicKit().then((mk) => {
+        dispatch({
+          type: 'MK_TIME',
+          positionMs: mk.player.currentPlaybackTime * 1000,
+        });
+      });
+      rafRef.current = requestAnimationFrame(tick);
+    }
+
+    if (state.isPlaying) {
+      if (rafRef.current === null) {
+        rafRef.current = requestAnimationFrame(tick);
+      }
+    } else {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    }
+
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [state.isPlaying]);
+
+  // ---------------------------------------------------------------------------
+  // MusicKit event listeners
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    // playbackState 2 = playing in MusicKit JS v3
     const onPlaybackState = (event: unknown) => {
       const e = event as { state: number };
       dispatch({ type: 'MK_PLAYBACK_STATE', isPlaying: e.state === 2 });
@@ -105,23 +147,12 @@ export function PlayerStoreProvider({ children }: { children: React.ReactNode })
       });
     };
 
-    const onTimeChange = () => {
-      getMusicKit().then((mk) => {
-        dispatch({
-          type: 'MK_TIME',
-          positionMs: mk.player.currentPlaybackTime * 1000,
-        });
-      });
-    };
-
     addPlayerListener('playbackStateDidChange', onPlaybackState);
     addPlayerListener('nowPlayingItemDidChange', onNowPlaying);
-    addPlayerListener('playbackTimeDidChange', onTimeChange);
 
     return () => {
       removePlayerListener('playbackStateDidChange', onPlaybackState);
       removePlayerListener('nowPlayingItemDidChange', onNowPlaying);
-      removePlayerListener('playbackTimeDidChange', onTimeChange);
     };
   }, []);
 
