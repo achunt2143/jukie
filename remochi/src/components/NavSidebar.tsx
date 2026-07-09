@@ -16,8 +16,8 @@ export default function NavSidebar() {
 
   return (
     <nav style={{ gridArea: 'nav', borderRight: '1px solid var(--mochi-border)', overflowY: 'auto' }}>
-      <div style={{ padding: '16px 12px 8px' }}>
-        <Header>Jukie</Header>
+      <div style={{ padding: '16px 0px 8px' }}>
+        <Header content='Jukie' />
       </div>
       <Divider />
       <List>
@@ -26,20 +26,25 @@ export default function NavSidebar() {
           <ListItem
             key={path}
             onSelect={() => navigate(path)}
-            style={{ fontWeight: pathname === path ? 600 : undefined }}
+            // style={{ fontWeight: pathname === path ? 600 : undefined }}
           >
             {label}
           </ListItem>
         ))}
         <ListHeader content="Discover" />
-        <ListItem onSelect={() => navigate('/search')} style={{ fontWeight: pathname === '/search' ? 600 : undefined }}>
+        <ListItem onSelect={() => navigate('/search')} 
+        // style={{ fontWeight: pathname === '/search' ? 600 : undefined }}
+        >
           Search
         </ListItem>
-        <ListHeader content="" />
-        <ListItem onSelect={() => navigate('/now-playing')} style={{ fontWeight: pathname === '/now-playing' ? 600 : undefined }}>
+        <ListItem onSelect={() => navigate('/now-playing')} 
+        // style={{ fontWeight: pathname === '/now-playing' ? 600 : undefined }}
+        >
           Now Playing
         </ListItem>
-        <ListItem onSelect={() => navigate('/settings')} style={{ fontWeight: pathname === '/settings' ? 600 : undefined }}>
+        <ListItem onSelect={() => navigate('/settings')} 
+        // style={{ fontWeight: pathname === '/settings' ? 600 : undefined }}
+        >
           Settings
         </ListItem>
       </List>

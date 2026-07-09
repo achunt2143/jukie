@@ -41,7 +41,7 @@ export default function PlayerBar() {
 
       {/* Scrubber */}
       <span style={{ fontSize: 12, opacity: 0.6 }}>{fmt(positionMs)}</span>
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, margin: "0px 32px" }}>
         <Slider
           value={currentTrack ? (positionMs / currentTrack.durationMs) * 100 : 0}
           onChange={(v) => {

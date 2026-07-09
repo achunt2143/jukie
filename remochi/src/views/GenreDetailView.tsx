@@ -16,7 +16,8 @@ export default function GenreDetailView() {
 
   return (
     <div>
-      <Header>Genre</Header>
+      <Header content='Genre' />
+      <div style={{ marginBottom: 8 }} />
       <Divider />
       {loading ? <Spinner active styleType="dark" size="normal" /> : <TrackList tracks={tracks} />}
     </div>

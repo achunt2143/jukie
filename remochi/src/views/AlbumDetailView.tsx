@@ -24,11 +24,13 @@ export default function AlbumDetailView() {
             : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>🎵</div>}
         </div>
         <div>
-          <Header>{album.title}</Header>
+          <Header content={album.title} />
           <Subheader content={`${album.artist}${album.year ? ` · ${album.year}` : ''} · ${album.trackCount} tracks`} />
+          <div style={{ marginBottom: 8 }} />
         </div>
       </div>
       <Divider />
+      <div style={{ marginBottom: 16 }} />
       <TrackList tracks={album.tracks ?? []} />
     </div>
   );

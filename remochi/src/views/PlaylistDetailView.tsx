@@ -17,9 +17,11 @@ export default function PlaylistDetailView() {
 
   return (
     <div>
-      <Header>{playlist.name}</Header>
+      <Header content={playlist.name} />
       {playlist.description && <Subheader content={playlist.description} />}
+      <div style={{ marginBottom: 8 }} />
       <Divider />
+      <div style={{ marginBottom: 8 }} />
       <TrackList tracks={playlist.tracks ?? []} />
     </div>
   );

@@ -24,3 +24,4 @@ webOS-legacy/com.achunt.jukie.service/jukie-drm
 # OS/editor cruft
 .DS_Store
 Thumbs.db
+**node_modules**

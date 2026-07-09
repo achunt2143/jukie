@@ -23,7 +23,7 @@ export default function NowPlayingView() {
       </div>
 
       <div style={{ textAlign: 'center' }}>
-        <Header>{currentTrack?.title ?? 'Nothing playing'}</Header>
+        <Header content={currentTrack?.title ?? 'Nothing playing'} />
         <Subheader content={currentTrack ? `${currentTrack.artist} · ${currentTrack.album}` : ''} />
       </div>
 

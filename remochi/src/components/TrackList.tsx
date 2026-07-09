@@ -21,19 +21,18 @@ export default function TrackList({ tracks }: Props) {
       {tracks.map((track, i) => {
         const active = state.currentTrack?.id === track.id;
         return (
-          <ListItem
+          <><ListItem
             key={track.id}
             onSelect={() => {
               dispatch({ type: 'PLAY', track, queue: tracks, index: i });
               playerApi.playTrack(track);
-            }}
-            style={{ fontWeight: active ? 700 : undefined }}
+            } }
           >
             <span style={{ flex: 1 }}>{track.title}</span>
             <span style={{ opacity: 0.5, fontSize: 12, marginRight: 8 }}>{track.artist}</span>
             {active && <Badge content="▶" background="var(--mochi-accent)" color="#fff" />}
             <span style={{ opacity: 0.4, fontSize: 12 }}>{fmt(track.durationMs)}</span>
-          </ListItem>
+          </ListItem><div style={{ marginBottom: 4 }} /></>
         );
       })}
     </List>

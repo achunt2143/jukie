@@ -20,7 +20,10 @@ export default function SearchView() {
 
   return (
     <div>
-      <Header>Search</Header>
+      <Header content='Search' />
+      <div style={{ marginBottom: 8 }} />
+      <Divider />
+      <div style={{ marginTop: 32, marginLeft: 32, marginRight: 32 }}>
       <Input
         type="search"
         placeholder="Search Apple Music…"
@@ -35,11 +38,13 @@ export default function SearchView() {
           {results.artists.length > 0 && (
             <><Subheader content="Artists" />
               <List>{results.artists.map((a) => <ListItem key={a.id}>{a.name}</ListItem>)}</List>
+              <div style={{ marginBottom: 4 }} />
             </>
           )}
           {results.albums.length > 0 && (
             <><Subheader content="Albums" />
               <List>{results.albums.map((a) => <ListItem key={a.id}>{a.title} — {a.artist}</ListItem>)}</List>
+              <div style={{ marginBottom: 4 }} />
             </>
           )}
           {results.tracks.length > 0 && (
@@ -50,6 +55,7 @@ export default function SearchView() {
           )}
         </>
       )}
+      </div>
     </div>
   );
 }

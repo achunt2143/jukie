@@ -14,10 +14,10 @@ export default function GenresView() {
       {loading ? <Spinner active styleType="dark" size="normal" /> : (
         <List>
           {genres.map((g) => (
-            <ListItem key={g.id} onSelect={() => navigate(`/library/genres/${g.id}`)}>
+            <><ListItem key={g.id} onSelect={() => navigate(`/library/genres/${g.id}`)}>
               {g.name}
               <span style={{ opacity: 0.5, fontSize: 12, marginLeft: 8 }}>{g.trackCount} songs</span>
-            </ListItem>
+            </ListItem><div style={{ marginBottom: 4 }} /></>
           ))}
         </List>
       )}

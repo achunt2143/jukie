@@ -18,15 +18,16 @@ export default function ArtistDetailView() {
 
   return (
     <div>
-      <Header>{artist.name}</Header>
+      <Header content={artist.name} />
       <Subheader content={`${artist.albumCount} albums`} />
+      <div style={{ marginBottom: 8 }} />
       <Divider />
       <List>
         {(artist.albums ?? []).map((album) => (
-          <ListItem key={album.id} onSelect={() => navigate(`/library/albums/${album.id}`)}>
+          <><ListItem key={album.id} onSelect={() => navigate(`/library/albums/${album.id}`)}>
             {album.title}
             <span style={{ opacity: 0.5, fontSize: 12, marginLeft: 8 }}>{album.year}</span>
-          </ListItem>
+          </ListItem><div style={{ marginBottom: 4 }} /></>
         ))}
       </List>
     </div>

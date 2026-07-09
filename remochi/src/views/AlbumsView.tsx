@@ -11,7 +11,8 @@ export default function AlbumsView() {
 
   return (
     <div>
-      <Header>Albums</Header>
+      <Header content='Albums' />
+      <div style={{ marginBottom: 8 }} />
       <Divider />
       {loading ? <Spinner active styleType="dark" size="large" /> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 16 }}>

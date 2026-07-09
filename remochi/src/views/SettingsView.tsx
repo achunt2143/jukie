@@ -15,39 +15,57 @@ export default function SettingsView() {
 
   return (
     <div>
-      <Header>Settings</Header>
+      <Header content='Settings' />
+
+      <div style={{ marginBottom: 8 }} />
       <Divider />
 
       <Subheader content="Appearance" />
-      <Item
-        title="Dark mode"
-        rightContent={
-          <Toggle
-            checked={theme === 'dark'}
-            onChange={() => toggleTheme()}
-          />
-        }
-      />
+      <div style={{ marginBottom: 8 }} />
+      <div style={{ margin: "0px 24px" }}>
+        <Item
+          title="Dark mode"
+          rightContent={
+            <Toggle
+              checked={theme === 'dark'}
+              onChange={() => toggleTheme()}
+            />
+          }
+        />
+        <div style={{ marginBottom: 16 }} />
+        <Divider />
+      </div>
 
-      <Divider />
       <Subheader content="Playback" />
-      <Item title="Streaming quality" rightContent={
-        <Dropdown options={qualityOptions} value={quality} onChange={setQuality} />
-      } />
-      <Item title="Crossfade" rightContent={
-        <Toggle checked={crossfade} onChange={(e) => setCrossfade(e.target.checked)} />
-      } />
+      <div style={{ marginBottom: 8 }} />
+      <div style={{ margin: "0px 24px" }}>
+        <Item title="Streaming quality" rightContent={
+          <Dropdown options={qualityOptions} value={quality} onChange={setQuality} />
+        } />
+        <div style={{ marginBottom: 4 }} />
+        <Item title="Crossfade" rightContent={
+          <Toggle checked={crossfade} onChange={(e) => setCrossfade(e.target.checked)} />
+        } />
+        <div style={{ marginBottom: 16 }} />
+        <Divider />
+      </div>
 
-      <Divider />
       <Subheader content="Notifications" />
-      <Item title="Show now-playing notifications" rightContent={
-        <Toggle checked={notifications} onChange={(e) => setNotifications(e.target.checked)} />
-      } />
-
-      <Divider />
+      <div style={{ marginBottom: 8 }} />
+      <div style={{ margin: "0px 24px" }}>
+        <Item title="Show now-playing notifications" rightContent={
+          <Toggle checked={notifications} onChange={(e) => setNotifications(e.target.checked)} />
+        } />
+        <div style={{ marginBottom: 16 }} />
+        <Divider />
+      </div>
       <Subheader content="About" />
-      <Item title="Version" rightContent="0.1.0" />
-      <Item title="Platform" rightContent="Remochi (Web)" />
+      <div style={{ marginBottom: 8 }} />
+      <div style={{ margin: "0px 24px" }}>
+        <Item title="Version" rightContent="0.1.0" />
+        <div style={{ marginBottom: 4 }} />
+        <Item title="Platform" rightContent="Remochi (Web) 0.2.1" />
+      </div>
     </div>
   );
 }

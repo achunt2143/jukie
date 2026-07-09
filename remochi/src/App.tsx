@@ -18,6 +18,7 @@ import SearchView from '@/views/SearchView';
 import NowPlayingView from '@/views/NowPlayingView';
 import SettingsView from '@/views/SettingsView';
 import './app.css';
+import { Panel } from 'remochi';
 
 export default function App() {
   return (
@@ -25,7 +26,8 @@ export default function App() {
       <LibraryStoreProvider>
         <PlayerStoreProvider>
           <div className="jukie-shell">
-            <NavSidebar />
+            <Panel style='shadow'><NavSidebar /></Panel>
+            <Panel>
             <main className="jukie-main">
               <Routes>
                 <Route path="/" element={<Navigate to="/library" replace />} />
@@ -44,6 +46,7 @@ export default function App() {
                 <Route path="/settings" element={<SettingsView />} />
               </Routes>
             </main>
+            </Panel>
             <PlayerBar />
           </div>
         </PlayerStoreProvider>
