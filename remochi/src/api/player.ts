@@ -1,18 +1,22 @@
 /**
  * Player service — full MusicKit JS v3 playback.
  *
- * The PlayerStore subscribes to MusicKit player events for real-time state
- * sync (playback state changes, now-playing item changes, time updates).
- * These functions are the imperative command surface.
+ * KEY: MusicKit JS v3 setQueue({ songs: [...] }) expects CATALOG IDs.
+ * Library track IDs (i.xxxxxxxx) must be passed as typed item descriptors:
+ *   { id, type: 'library-songs' }
+ * Passing library IDs into the 'songs' key silently fails — no stream starts.
  */
 import { getMusicKit } from './musickit';
 import type { Track } from '@/types/music';
 
 export async function playTrack(track: Track, queue: Track[] = [track], index = 0): Promise<void> {
   const mk = await getMusicKit();
-  // Build queue from song IDs. For library tracks the IDs are library song IDs.
-  const ids = queue.map((t) => t.id);
-  await mk.setQueue({ songs: ids, startPosition: index });
+
+  // Build typed item descriptors for the full queue.
+  // type 'library-songs' tells MusicKit to resolve from the user's library.
+  const items = queue.map((t) => ({ id: t.id, type: 'library-songs' as const }));
+
+  await mk.setQueue({ items, startPosition: index } as unknown as MusicKit.SetQueueOptions);
   await mk.player.play();
 }
 

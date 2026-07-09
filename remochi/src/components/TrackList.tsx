@@ -1,5 +1,5 @@
 import React from 'react';
-import { List, ListItem, Badge } from 'remochi';
+import { Badge } from 'remochi';
 import type { Track } from '@/types/music';
 import { usePlayer } from '@/store/PlayerStore';
 import * as playerApi from '@/api/player';
@@ -17,24 +17,51 @@ export default function TrackList({ tracks }: Props) {
   const { state, dispatch } = usePlayer();
 
   return (
-    <List>
+    <div role="list">
       {tracks.map((track, i) => {
         const active = state.currentTrack?.id === track.id;
         return (
-          <><ListItem
+          <div
             key={track.id}
-            onSelect={() => {
+            role="listitem"
+            onClick={() => {
               dispatch({ type: 'PLAY', track, queue: tracks, index: i });
-              playerApi.playTrack(track);
-            } }
+              playerApi.playTrack(track, tracks, i);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px',
+              borderRadius: 6,
+              marginBottom: 2,
+              cursor: 'pointer',
+              background: active ? 'var(--mochi-accent, #0071e3)' : 'transparent',
+              color: active ? '#fff' : 'inherit',
+              userSelect: 'none',
+            }}
+            onMouseEnter={(e) => {
+              if (!active) e.currentTarget.style.background = 'var(--mochi-hover, rgba(0,0,0,0.06))';
+            }}
+            onMouseLeave={(e) => {
+              if (!active) e.currentTarget.style.background = 'transparent';
+            }}
           >
-            <span style={{ flex: 1 }}>{track.title}</span>
-            <span style={{ opacity: 0.5, fontSize: 12, marginRight: 8 }}>{track.artist}</span>
-            {active && <Badge content="▶" background="var(--mochi-accent)" color="#fff" />}
-            <span style={{ opacity: 0.4, fontSize: 12 }}>{fmt(track.durationMs)}</span>
-          </ListItem><div style={{ marginBottom: 4 }} /></>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: active ? 600 : 400 }}>
+              {track.title}
+            </span>
+            <span style={{ opacity: active ? 0.8 : 0.5, fontSize: 12, marginRight: 8 }}>
+              {track.artist}
+            </span>
+            {active && (
+              <Badge content="▶" background="rgba(255,255,255,0.25)" color="#fff" />
+            )}
+            <span style={{ opacity: active ? 0.8 : 0.4, fontSize: 12 }}>
+              {fmt(track.durationMs)}
+            </span>
+          </div>
         );
       })}
-    </List>
+    </div>
   );
 }
