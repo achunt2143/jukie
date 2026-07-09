@@ -1,31 +1,32 @@
 /**
  * Player service — full MusicKit JS v3 playback.
  *
- * MusicKit JS v3 setQueue({ items }) must receive the actual
- * MusicKit.MediaItem objects that MusicKit itself returned — NOT
- * { id, type } descriptor strings. The type-descriptor approach causes
- * MusicKit to try to pluralise the type string to build a URL path, which
- * produces "/v1/me/library/undefineds/..." for any unrecognised type.
- *
- * Raw items are kept alive in the rawItemCache in library.ts and retrieved
- * here via getRawItem() before every setQueue call.
+ * setQueue({ items }) must receive actual MusicKit.MediaItem objects.
+ * We pull them from rawItemCache (populated by library.ts on fetch).
+ * Any cache miss is resolved with a live fetch before queuing.
  */
 import { getMusicKit } from './musickit';
-import { getRawItem } from './library';
+import { getRawItem, fetchRawItemsByIds } from './library';
 import type { Track } from '@/types/music';
 
 export async function playTrack(track: Track, queue: Track[] = [track], index = 0): Promise<void> {
   const mk = await getMusicKit();
 
-  // Resolve raw MusicKit.MediaItem objects for the full queue.
-  // Any item not yet cached falls back to a minimal descriptor that MusicKit
-  // can still use if the library fetch already populated its internal cache.
+  // Find which IDs are missing from the cache.
+  const missingIds = queue.map((t) => t.id).filter((id) => !getRawItem(id));
+
+  // Fetch any missing items in one batch call, which also populates the cache.
+  if (missingIds.length > 0) {
+    await fetchRawItemsByIds(missingIds);
+  }
+
+  // Now resolve the full queue from cache.
   const rawItems = queue
     .map((t) => getRawItem(t.id))
     .filter((item): item is MusicKit.MediaItem => item !== undefined);
 
   if (rawItems.length === 0) {
-    console.warn('[player] No raw items found in cache — library may not have finished loading.');
+    console.error('[player] Could not resolve any tracks — check library permissions.');
     return;
   }
 
