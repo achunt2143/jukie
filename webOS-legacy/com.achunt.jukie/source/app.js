@@ -156,6 +156,7 @@ enyo.kind({
 		this.$.Settings.setDb8(this.$.DB8);
 
 		this.appleMusicService.on("onAppleMusicError", enyo.bind(this, "onAppleMusicError"));
+		this.appleMusicService.on("onDeveloperTokenRefreshed", enyo.bind(this, "onDeveloperTokenAutoRefreshed"));
 	},
 
 	// Trigger a one-time library sync into db8 if we haven't cached it yet. The real
@@ -237,8 +238,52 @@ enyo.kind({
 		this.boolAppleMusicReady = this.appleMusicService.ready();
 		this.boolAppleMusicInitFailed = !this.boolAppleMusicReady;
 		this.finishInitialLoad();
+		// Fire-and-forget: if the token we just applied is missing/near-expiry, try to
+		// silently replace it with a fresh one scraped from music.apple.com (same
+		// public token jukie-drm already auto-refreshes for playback - see
+		// utility/webtoken.js). Never blocks boot; onDeveloperTokenAutoRefreshed picks
+		// up the result if/when it resolves. request()'s own 401 retry is the backstop
+		// if this hasn't finished (or wasn't possible) before the library sync below
+		// fires.
+		this.appleMusicService.ensureDeveloperToken();
 		// Populate the db8 library cache shortly after launch (off the critical path).
 		setTimeout(enyo.bind(this, "syncLibraryIfEmpty"), 4000);
+	},
+
+	// A stale/missing Developer Token got silently replaced with one scraped live from
+	// music.apple.com (see utility/webtoken.js). Write it through to secrets.local.json
+	// immediately (same as onSaveSettings_View - see [[settings-save-db8-queue-bug]],
+	// don't gate the file the native service reads behind db8), then best-effort persist
+	// to Settings/db8 so it survives the next launch and shows correctly if the user
+	// opens Preferences.
+	// NOTE: emitSignal() invokes listeners as fn(payload) - a single argument, unlike
+	// the (sender, payload) PalmService/event-bubbling convention used elsewhere in this
+	// file (see onAppleMusicError, which is unintentionally always called with
+	// payload===undefined for that reason - not touching that here, out of scope).
+	onDeveloperTokenAutoRefreshed: function (payload)
+	{
+		var self = this;
+		var token = payload && payload.token;
+		var prev = this.appSettings || {};
+		var merged;
+		if (!token)
+		{
+			return;
+		}
+		this.log("developer token auto-refreshed from music.apple.com");
+		merged = {
+			developerToken: token,
+			musicUserToken: prev.musicUserToken || "",
+			storefront: prev.storefront || "us",
+			cacheEnabled: prev.cacheEnabled !== false,
+			streamQuality: prev.streamQuality || "high"
+		};
+		this.appSettings = merged;
+		this.$.Playback.setCredentials(merged.developerToken, merged.musicUserToken);
+		this.$.Settings.save(merged).catch(function (err)
+		{
+			self.log("auto-refreshed token: db8 persist failed (still applied in-memory + written to secrets file):", err);
+		});
 	},
 
 	// Apply settings to the live AppleMusicService. Only non-empty tokens override the
@@ -359,12 +404,20 @@ enyo.kind({
 		var boolTokenChanged = (settings.musicUserToken !== prev.musicUserToken) ||
 			(settings.developerToken !== prev.developerToken) ||
 			(settings.storefront !== prev.storefront);
-		this.$.Settings.save(settings).then(function (stored)
+		// Apply (and in particular write secrets.local.json via Playback.setCredentials)
+		// from the just-submitted values IMMEDIATELY, synchronously - do NOT wait on
+		// Settings.save() below. kindDB8 serializes EVERY db8 call app-wide through one
+		// queue (this.$.DB8 is shared with LibraryCache - see injectAppleMusicDependencies),
+		// so a save made while the boot-time library sync is still churning (the common
+		// case: first launch after install, Settings is blank, and syncLibraryIfEmpty's
+		// sync of an empty library is exactly what's running while the user pastes their
+		// first tokens and hits Save) would sit queued behind hundreds of sync calls -
+		// or longer, if any one of them never resolves. The credentials file write has
+		// nothing to do with db8 and must not inherit that queue's latency.
+		this.applySettings(settings, boolTokenChanged);
+		this.$.Settings.save(settings).catch(function (err)
 		{
-			self.applySettings(stored, boolTokenChanged);
-		}).catch(function (err)
-		{
-			self.log("settings save failed:", err);
+			self.log("settings save failed (secrets file + in-memory state are still up to date):", err);
 		});
 		this._hideSettingsView();
 	},

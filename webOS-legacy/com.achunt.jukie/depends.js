@@ -49,6 +49,7 @@ enyo.depends(
 	"utility/mediaindex.js",
 	"utility/librarytools.js",
 	"utility/playlistmanager.js",
+	"utility/webtoken.js",
 	"utility/applemusicservice.js",
 	"utility/audioplayer.js",
 	"utility/playback.js",

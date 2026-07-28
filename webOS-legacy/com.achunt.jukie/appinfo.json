@@ -1,6 +1,6 @@
 {
 	"id": "com.achunt.jukie",
-	"version": "0.0.1",
+	"version": "1.0.1",
 	"vendor": "achunt",
 	"type": "web",
 	"main": "index.html",

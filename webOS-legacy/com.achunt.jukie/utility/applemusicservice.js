@@ -1,4 +1,4 @@
-/*globals enyo, window, fetch, Promise */
+/*globals enyo, window, fetch, Promise, WebToken */
 enyo.kind({
     name: "AppleMusicService",
     kind: "enyo.Component",
@@ -15,6 +15,10 @@ enyo.kind({
         onError: ""
     },
 
+    // Guards against ensureDeveloperToken() overlapping itself (a boot-time call and a
+    // reactive 401 retry landing close together) - see ensureDeveloperToken/request.
+    _refreshInFlight: null,
+
     API_BASE: "https://api.music.apple.com/v1",
 
     create: function () {
@@ -29,15 +33,29 @@ enyo.kind({
         this._listeners[signal].push(fn);
     },
 
+    // Both build ONE string and make a single console call, rather than
+    // console.log.apply(console, [multiple, separate, args]) - confirmed on-device
+    // (via utility/webtoken.js's identical original pattern) that webOS's
+    // console->syslog bridge silently drops every argument past the first when called
+    // that way. Matches the pattern kindSettings.log already uses (settings.js).
+    _fmt: function (prefix, args) {
+        var parts = [prefix];
+        var i;
+        for (i = 0; i < args.length; i++) {
+            parts.push((typeof args[i] === "object") ? JSON.stringify(args[i]) : ("" + args[i]));
+        }
+        return parts.join(" ");
+    },
+
     log: function () {
         if (this.debug && typeof console !== "undefined" && console.log) {
-            console.log.apply(console, ["[AppleMusicService]"].concat([].slice.call(arguments)));
+            console.log(this._fmt("[AppleMusicService]", arguments));
         }
     },
 
     error: function () {
         if (typeof console !== "undefined" && console.error) {
-            console.error.apply(console, ["[AppleMusicService]"].concat([].slice.call(arguments)));
+            console.error(this._fmt("[AppleMusicService]", arguments));
         }
     },
 
@@ -66,6 +84,33 @@ enyo.kind({
         return true;
     },
 
+    // Refreshes developerToken from music.apple.com if it's missing/near-expiry (see
+    // utility/webtoken.js - a client-side port of jukie-drm's own auto-refresh). Never
+    // rejects. Resolves the (possibly unchanged) current token. Concurrent calls share
+    // one in-flight attempt instead of racing separate fetches.
+    ensureDeveloperToken: function (force) {
+        var self = this;
+        if (this._refreshInFlight) {
+            return this._refreshInFlight;
+        }
+        this._refreshInFlight = WebToken.ensure(this.developerToken, force).then(function (result) {
+            self._refreshInFlight = null;
+            if (result.changed) {
+                self.log("developer token auto-refreshed from music.apple.com");
+                self.setDeveloperToken(result.token);
+                self.emitSignal("onDeveloperTokenRefreshed", { token: result.token, expiry: WebToken.jwtExpiry(result.token) });
+            }
+            return result.token;
+        }).catch(function (err) {
+            // WebToken.ensure() itself doesn't reject, but guard anyway so a refresh
+            // attempt can never take down a caller that awaited it.
+            self._refreshInFlight = null;
+            self.error("ensureDeveloperToken failed unexpectedly", err);
+            return self.developerToken;
+        });
+        return this._refreshInFlight;
+    },
+
     _buildQuery: function (params) {
         var parts = [];
         var key;
@@ -80,7 +125,7 @@ enyo.kind({
         return parts.join("&");
     },
 
-    request: function (path, params) {
+    request: function (path, params, _isRetry) {
         var self = this;
         var query = this._buildQuery(params);
         var url = this.API_BASE + path + (query ? ("?" + query) : "");
@@ -91,7 +136,20 @@ enyo.kind({
 
         this.log("GET", url);
 
-        var headers = { "Authorization": "Bearer " + this.developerToken };
+        // api.music.apple.com rejects the public "AMPWebPlay" web-player developer
+        // token with a 401 unless the request carries an Origin matching
+        // music.apple.com - confirmed by direct testing: an otherwise-valid, freshly
+        // scraped token gets 401 with only Authorization set, 200 once Origin is
+        // added. A real browser sends this automatically for music.apple.com's own
+        // page scripts; this app isn't that origin, so it has to set it explicitly.
+        // (A real Apple Developer Program JWT - the other supported token type,
+        // see the README - is not known to require this, but sending it either way
+        // is harmless.)
+        var headers = {
+            "Authorization": "Bearer " + this.developerToken,
+            "Origin": "https://music.apple.com",
+            "Referer": "https://music.apple.com/"
+        };
         if (this.musicUserToken) {
             headers["Music-User-Token"] = this.musicUserToken;
         }
@@ -100,6 +158,18 @@ enyo.kind({
             method: "GET",
             headers: headers
         }).then(function (response) {
+            if (response.status === 401 && !_isRetry) {
+                // The token's own exp claim can say "still fine" while Apple's server
+                // disagrees (revoked, or this was never a working token to begin with -
+                // see the 2026-07-27 investigation into "Your Library" coming back
+                // empty). Force one real re-scrape via WebToken before giving up; if it
+                // can't reach/parse music.apple.com (most likely a cross-origin block -
+                // see webtoken.js), ensureDeveloperToken resolves the SAME token and
+                // this just fails again below, no worse than before.
+                return self.ensureDeveloperToken(true).then(function () {
+                    return self.request(path, params, true);
+                });
+            }
             if (!response.ok) {
                 throw new Error("Apple Music API request failed: " + response.status + " " + url);
             }
