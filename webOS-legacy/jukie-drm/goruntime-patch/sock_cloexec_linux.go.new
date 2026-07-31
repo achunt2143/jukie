@@ -1,0 +1,48 @@
+// Copyright 2013 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// This file implements sysSocket for linux. It prefers the fast combined
+// SOCK_NONBLOCK|SOCK_CLOEXEC path, but falls back to a plain socket() call
+// plus separate CloseOnExec/SetNonblock syscalls when the kernel is too old
+// to understand those bits in the socket(2) type argument (e.g. webOS
+// TouchPad/Pre2's custom 2.6.24 kernel; combined-flags support was added to
+// mainline Linux in 2.6.27).
+
+//go:build linux
+
+package net
+
+import (
+	"internal/poll"
+	"os"
+	"syscall"
+)
+
+// Wrapper around the socket system call that marks the returned file
+// descriptor as nonblocking and close-on-exec.
+func sysSocket(family, sotype, proto int) (int, error) {
+	s, err := socketFunc(family, sotype|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, proto)
+	if err == nil {
+		return s, nil
+	}
+	if err != syscall.EINVAL && err != syscall.ENOSYS {
+		return -1, os.NewSyscallError("socket", err)
+	}
+
+	// See ../syscall/exec_unix.go for description of ForkLock.
+	syscall.ForkLock.RLock()
+	s, err = socketFunc(family, sotype, proto)
+	if err == nil {
+		syscall.CloseOnExec(s)
+	}
+	syscall.ForkLock.RUnlock()
+	if err != nil {
+		return -1, os.NewSyscallError("socket", err)
+	}
+	if err = syscall.SetNonblock(s, true); err != nil {
+		poll.CloseFunc(s)
+		return -1, os.NewSyscallError("setnonblock", err)
+	}
+	return s, nil
+}

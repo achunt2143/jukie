@@ -1,0 +1,11 @@
+--- "C:/Program Files/Go/src/net/sock_cloexec.go"	2026-05-29 15:26:40.000000000 -0400
++++ C:/Users/achun/sdk/go1.26-pre2/src/net/sock_cloexec.go	2026-07-28 15:50:21.553941700 -0400
+@@ -5,7 +5,7 @@
+ // This file implements sysSocket for platforms that provide a fast path for
+ // setting SetNonblock and CloseOnExec.
+ 
+-//go:build dragonfly || freebsd || linux || netbsd || openbsd
++//go:build dragonfly || freebsd || netbsd || openbsd
+ 
+ package net
+ 

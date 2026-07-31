@@ -15,7 +15,8 @@
 			{ "name": "seek",      "assistant": "SeekCommandAssistant",      "public": true },
 			{ "name": "setVolume", "assistant": "SetVolumeCommandAssistant", "public": true },
 			{ "name": "getVolume", "assistant": "GetVolumeCommandAssistant", "public": true },
-			{ "name": "setCredentials", "assistant": "SetCredentialsCommandAssistant", "public": true }
+			{ "name": "setCredentials", "assistant": "SetCredentialsCommandAssistant", "public": true },
+			{ "name": "apiGet",    "assistant": "ApiGetCommandAssistant",    "public": true }
 		]
 	}]
 }

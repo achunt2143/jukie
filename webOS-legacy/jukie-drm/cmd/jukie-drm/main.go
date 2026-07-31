@@ -23,6 +23,8 @@ import (
 
 	"github.com/achunt/jukie-drm/internal/apple"
 	"github.com/achunt/jukie-drm/internal/appleauth"
+	"github.com/achunt/jukie-drm/internal/certs"
+	"github.com/achunt/jukie-drm/internal/remux"
 	widevine "github.com/iyear/gowidevine"
 	"google.golang.org/protobuf/proto"
 	wvpb "github.com/iyear/gowidevine/widevinepb"
@@ -49,10 +51,25 @@ func logf(format string, a ...any) { fmt.Fprintf(os.Stderr, format+"\n", a...) }
 func main() {
 	out := flag.String("o", "", "output path for the decrypted .m4a (default: <title>.m4a)")
 	jsonOut := flag.Bool("json", false, "print one JSON result line on stdout")
+	apiPath := flag.String("api", "", "authenticated GET against the Apple Music API (path or full URL); prints the raw JSON response")
 	flag.Parse()
+
+	// Supply TLS roots from the embedded bundle: webOS devices ship no CA store,
+	// so without this every HTTPS request fails cert verification.
+	if err := certs.Install(); err != nil {
+		logf("warning: %v (HTTPS may fail)", err)
+	}
+
+	// API-proxy mode. The webOS 2.x browser can't reach Apple over TLS at all, so
+	// the app routes its catalog/library requests through here.
+	if *apiPath != "" {
+		os.Exit(runAPI(*apiPath))
+	}
+
 	args := flag.Args()
 	if len(args) < 1 {
 		logf("usage: jukie-drm [-o out.m4a] [-json] <songId> [universalLibraryId]")
+		logf("       jukie-drm -api <apiPathOrURL>")
 		os.Exit(2)
 	}
 	libraryID := ""
@@ -72,6 +89,38 @@ func main() {
 	if !r.OK {
 		os.Exit(1)
 	}
+}
+
+// runAPI performs one authenticated Apple Music API GET and writes the raw
+// response body to stdout, returning a process exit code. All progress/error
+// chatter goes to stderr so stdout stays pure JSON for the caller (the Luna
+// service parses it directly).
+//
+// On a non-2xx the body is still printed - Apple's own error JSON is far more
+// useful to surface than a bare status code - but the exit code is non-zero.
+func runAPI(path string) int {
+	s, err := loadSecrets()
+	if err != nil {
+		logf("FAIL: %v", err)
+		return 1
+	}
+	appleauth.Logf = logf
+	webToken, err := appleauth.EnsureWebToken(appleauth.DefaultCacheDir, nil, s.WebDeveloperToken)
+	if err != nil {
+		logf("FAIL: no usable web token: %v", err)
+		return 1
+	}
+	body, status, err := apple.New(webToken, s.MusicUserToken).APIGet(path)
+	if err != nil {
+		logf("FAIL: %v", err)
+		return 1
+	}
+	os.Stdout.Write(body)
+	if status < 200 || status >= 300 {
+		logf("FAIL: HTTP %d", status)
+		return 1
+	}
+	return 0
 }
 
 func run(songID, libraryID, outPath string) (result, error) {
@@ -171,6 +220,15 @@ func run(songID, libraryID, outPath string) (result, error) {
 		return result{}, fmt.Errorf("decrypt: %w", err)
 	}
 	f.Close()
+
+	// Apple's asset is a fragmented MP4 (moof/mdat) - the device's gst-launch-0.10
+	// (~2009-2010 era) can't demux that at all ("This file contains no playable
+	// streams", confirmed on-device against a file that plays fine elsewhere).
+	// Converting to raw ADTS AAC sidesteps MP4 demuxing entirely.
+	if err := remux.ToADTS(tmp); err != nil {
+		os.Remove(tmp)
+		return result{}, fmt.Errorf("remux to ADTS: %w", err)
+	}
 	if err := os.Rename(tmp, outPath); err != nil {
 		return result{}, err
 	}

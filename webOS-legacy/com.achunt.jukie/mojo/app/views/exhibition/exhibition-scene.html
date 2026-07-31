@@ -1,0 +1,40 @@
+<!-- Exhibition Mode - ambient full-screen now-playing display (Touchstone dock).
+     Deliberately no palm-header/chrome at all: this is meant to be looked at from across
+     a room, not interacted with like a normal scene. Passive display only - it reads
+     Jukie.currentTrack/Jukie.playback directly (same singleton every other scene uses),
+     it does not drive its own playback engine. See exhibition-assistant.js. -->
+<div id="exh-scene" class="palm-scene palm-dark jukie-exh">
+  <!-- Background layers. Tapping THIS (not the content overlay) exits back - see
+       exhibition-assistant.js's onBackgroundTap. A tap only ever lands on whichever
+       element is topmost at that screen point, so this never fires when a transport
+       button (drawn on top, in .jukie-exh-content) is what was actually tapped. -->
+  <div id="exh-art" class="jukie-exh-art" x-mojo-tap-highlight="momentary"></div>
+  <div class="jukie-exh-scrim"></div>
+
+  <div class="jukie-exh-content">
+    <div class="jukie-exh-clockrow">
+      <div id="exh-clock" class="jukie-exh-clock"></div>
+    </div>
+
+    <div class="jukie-exh-bottom">
+      <div id="exh-album" class="jukie-exh-album truncating-text"></div>
+      <div id="exh-title" class="jukie-exh-title truncating-text"></div>
+      <div id="exh-artist" class="jukie-exh-artist truncating-text"></div>
+
+      <div class="jukie-exh-times">
+        <span id="exh-elapsed">0:00</span>
+        <div class="jukie-exh-times-spacer"></div>
+        <span id="exh-duration">0:00</span>
+      </div>
+
+      <div class="jukie-exh-transport">
+        <div id="exh-prev" class="jukie-exh-btn is-prev" x-mojo-tap-highlight="momentary"></div>
+        <div id="exh-playpause-wrap" class="jukie-exh-btn-wrap">
+          <div id="exh-playpause" class="jukie-exh-btn is-play" x-mojo-tap-highlight="momentary"></div>
+          <div id="exh-spinner" x-mojo-element="Spinner" class="jukie-exh-spinner" style="display:none"></div>
+        </div>
+        <div id="exh-next" class="jukie-exh-btn is-next" x-mojo-tap-highlight="momentary"></div>
+      </div>
+    </div>
+  </div>
+</div>

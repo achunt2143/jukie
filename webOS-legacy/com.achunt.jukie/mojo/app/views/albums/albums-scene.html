@@ -1,0 +1,15 @@
+<div class="palm-scene palm-dark palm-hasheader">
+  <div class="palm-header left truncating-text">
+    <div class="palm-header-wrapper">
+      <div id="list-search-btn" class="jukie-header-icon-btn jukie-icon-search" x-mojo-tap-highlight="momentary"></div>
+      <div class="truncating-text" id="list-title"></div>
+    </div>
+  </div>
+  <!-- Live filter over the already-loaded library cache - see list-assistant.js
+       applyFilter(). Hidden by default; the header icon toggles it. -->
+  <div id="list-filter-bar" class="jukie-filter-bar" style="display:none">
+    <div id="list-filter-field" x-mojo-element="TextField" class="jukie-filter-field"></div>
+  </div>
+  <div id="list-status" class="jukie-status" style="margin-top:52px"></div>
+  <div id="scenelist" x-mojo-element="List" class="jukie-list"></div>
+</div>

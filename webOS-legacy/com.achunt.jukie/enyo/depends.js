@@ -44,6 +44,7 @@ enyo.depends(
 	"utility/promise-polyfill.js",
 	"utility/fetch-polyfill.js",
 	"utility/db8.js",
+	"utility/playbacksession.js",
 	"utility/librarycache.js",
 	"utility/settings.js",
 	"utility/mediaindex.js",
@@ -56,9 +57,13 @@ enyo.depends(
 	"utility/playbacklist.js",
 	"utility/utilities.js",
 	"utility/dashboardmanager.js",
-	
+	"utility/exhibitionmanager.js",
+
 	"dashboard/dashControls.js",
 	"dashboard/dashControls.css",
-	
+
+	"exhibition/exhibitionView.js",
+	"exhibition/exhibitionView.css",
+
 	"launch/MusicAppLauncher.js"
 );

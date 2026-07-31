@@ -1,0 +1,23 @@
+<div class="palm-scene palm-dark palm-hasheader">
+  <div class="palm-header left truncating-text">
+    <div class="palm-header-wrapper">
+      <!-- Search-type picker: a plain custom pill + tap listener opening the standalone
+           Sub-menu API (popupSubmenu), the same pattern Palm's own Calendar app uses for
+           its header calendar-source picker - not Mojo.Menu.viewMenu, which is a
+           different, framework-menu-scoped mechanism. See search-assistant.js. -->
+      <div id="search-type-source" class="jukie-type-source">
+        <div id="search-type-label" class="jukie-type-label"></div>
+        <div class="jukie-type-hit-target"></div>
+      </div>
+      <div class="truncating-text" x-mojo-loc="">Search Apple Music</div>
+    </div>
+  </div>
+
+  <div class="jukie-search-bar" style="margin-top:52px">
+    <div id="searchField" x-mojo-element="TextField" class="jukie-search-field"></div>
+    <div id="searchBtn" x-mojo-element="Button" class="jukie-search-btn"></div>
+  </div>
+
+  <div id="list-status" class="jukie-status"></div>
+  <div id="scenelist" x-mojo-element="List" class="jukie-list"></div>
+</div>

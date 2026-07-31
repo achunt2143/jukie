@@ -5,12 +5,15 @@ dev-stuff/
 # Built webOS package (regenerated fresh by deploy-jukie.ps1 on every run)
 *.ipk
 
-# Secrets and the compiled DRM helper bundled into the service at deploy time - these
+# Secrets and the compiled DRM helper(s) bundled into the service at deploy time - these
 # MUST stay physically present in webOS-legacy/com.achunt.jukie.service/ for
-# deploy-jukie.ps1 to package them, but must never be committed.
+# deploy-jukie.ps1 to package them, but must never be committed. Named per webOS version
+# now (jukie-drm-webos2/-webos3, not the old single "jukie-drm") since the service ships
+# both and picks one at load time.
 webOS-legacy/com.achunt.jukie.service/device.wvd
 webOS-legacy/com.achunt.jukie.service/secrets.local.json
-webOS-legacy/com.achunt.jukie.service/jukie-drm
+webOS-legacy/com.achunt.jukie.service/jukie-drm-webos2
+webOS-legacy/com.achunt.jukie.service/jukie-drm-webos3
 
 # Any *.local.* file, anywhere - this project's own convention for real secrets that must
 # stay on-device only (e.g. source/dev-token.local.js holds a real Apple developer token +

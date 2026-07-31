@@ -1,0 +1,23 @@
+[
+  { "source": "scripts/promise-polyfill.js" },
+  { "source": "scripts/fetch-polyfill.js" },
+  { "source": "scripts/webtoken.js" },
+
+  { "source": "app/models/db8-service.js" },
+  { "source": "app/models/settings-service.js" },
+  { "source": "app/models/applemusic-service.js" },
+  { "source": "app/models/librarycache-service.js" },
+  { "source": "app/models/playback-service.js" },
+
+  { "source": "app/controllers/app-assistant.js" },
+  { "source": "app/controllers/mainmenu-assistant.js" },
+  { "source": "app/controllers/list-assistant.js" },
+  { "source": "app/controllers/songs-assistant.js" },
+  { "source": "app/controllers/albums-assistant.js" },
+  { "source": "app/controllers/artists-assistant.js" },
+  { "source": "app/controllers/playlists-assistant.js" },
+  { "source": "app/controllers/nowplaying-assistant.js" },
+  { "source": "app/controllers/preferences-assistant.js" },
+  { "source": "app/controllers/search-assistant.js" },
+  { "source": "app/controllers/exhibition-assistant.js" }
+]

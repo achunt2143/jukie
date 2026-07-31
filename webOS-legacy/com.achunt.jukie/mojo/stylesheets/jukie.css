@@ -1,0 +1,607 @@
+/* Jukie (Mojo / webOS 2.x) - Apple-Music-red theme layered over palm-dark.
+   Designed for the 320px webOS card width. */
+
+:root { }
+
+.palm-dark, body.palm-dark { background: #0b0b0d; color: #f2f2f2; }
+
+/* The framework's own dark-theme stylesheet only whitens plain <input> text
+   (.palm-dark .textfield-group input); multiline TextFields render through a
+   separate contenteditable region it never covers, which defaults to black -
+   unreadable on this dark background while actively typing. */
+.palm-dark .smarttextfield .editable,
+.palm-dark .smarttextfield .multiline-text,
+.palm-dark textarea.text-edit { color: #fff; }
+
+/* ---- headers ------------------------------------------------------------ */
+.jukie-header {
+	background: #17171a;
+	border-bottom: 1px solid #2a2a2e;
+	padding: 10px 12px;
+	min-height: 24px;
+}
+.jukie-wordmark {
+	color: #fa2b56;
+	font-size: 22px;
+	font-weight: bold;
+	letter-spacing: -0.5px;
+}
+.jukie-list-title {
+	color: #ffffff;
+	font-size: 20px;
+	font-weight: bold;
+}
+/* Every scene's .palm-header-wrapper becomes the positioning context for header
+   pills (below), so they can be centred on the header's actual height with
+   top:50%/margin-top instead of guessing at line-height - float+line-height
+   guesses were consistently off (confirmed on-device: not vertically centred). */
+.palm-header-wrapper { position: relative; }
+
+/* Header pill built from the supplied button-red-dark asset via border-image: the
+   source PNG is a plain glossy circle (25x24), sliced down the middle so its
+   left/right halves become fixed end-caps and the 1px column between them
+   stretches to fit whatever width the "Now Playing" label needs - the same
+   technique com.ahunt.synergystopwatch.veer's header-mode-source pill uses on
+   cal-selector-header-gray.png (a proven, on-device-confirmed pattern, not a
+   from-scratch guess). border-width must match the slice values for correct
+   scaling. There's also no separate "pressed" asset for the dark button, so
+   :active just dims it instead. */
+.jukie-nowplaying-btn {
+	position: absolute;
+	top: 50%;
+	right: 8px;
+	margin-top: -17px; /* half of the 34px height below */
+	height: 34px;
+	line-height: 34px;
+	padding: 0 10px;
+	color: #fff;
+	font-size: 12px;
+	font-weight: bold;
+	text-align: center;
+	white-space: nowrap;
+	border-width: 0 12px;
+	-webkit-border-image: url(../images/button-red-dark.png) 0 12 0 12 stretch stretch;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+}
+.jukie-nowplaying-btn:active { opacity: 0.7; }
+
+/* Centred header title. The stock `left` class on .palm-header pins the title to
+   the left edge; scenes that want it centred drop that class and use this. */
+.jukie-header-center { text-align: center; }
+
+/* ---- status / empty ----------------------------------------------------- */
+/* Still used by every OTHER scene's own status line (albums/artists/playlists/songs/
+   search/preferences/nowplaying) - only mainmenu's library-status switched to a native
+   .palm-divider.labeled instead (see mainmenu-scene.html). */
+.jukie-status {
+	color: #9a9aa0;
+	font-size: 13px;
+	padding: 8px 14px;
+	min-height: 14px;
+}
+.jukie-empty { padding: 40px 24px; text-align: center; }
+.jukie-empty-msg { color: #ffffff; font-size: 18px; margin-bottom: 8px; }
+.jukie-empty-sub { color: #9a9aa0; font-size: 14px; line-height: 1.35; }
+
+/* ---- main menu rows ----------------------------------------------------- */
+.jukie-menu-title {
+	color: #f2f2f2;
+	font-size: 18px;
+	padding: 14px 16px;
+}
+#option-list .palm-row {
+	background: #131316;
+	border-bottom: 1px solid #232327;
+}
+#option-list .palm-row:active { background: #fa2b56; }
+
+/* Generic header icon button (currently just the search icon on the four library
+   list scenes) - same absolute/top:50% centering as the other header pills, sized
+   to the icon itself rather than a border-image pill. */
+.jukie-header-icon-btn {
+	/* -16px right margin was pushing this past the header's own edge inset
+	   ("too far right"); 8px matches the same right-edge gap the other header
+	   pills use (.jukie-nowplaying-btn, .jukie-type-source both use right:8px). */
+	margin: 8px 8px 8px 0;
+	position: relative;
+	float: right;
+	width: 28px;
+	height: 28px;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 20px 20px;
+}
+.jukie-header-icon-btn:active { opacity: 0.45; }
+.jukie-icon-search { background-image: url(../images/menu-icon-search.png); }
+
+/* Live-filter bar (search icon reveals this in place of the list). Clears the
+   header itself (margin-top:52px) since it's the first thing after it when shown;
+   list-assistant.js's toggleFilter() zeroes out #list-status's own header-clearing
+   margin while this is visible, so the two never both add that space at once. */
+.jukie-filter-bar {
+	margin-top: 52px;
+	padding: 12px 10px;
+	background: #131316;
+	border-bottom: 1px solid #232327;
+}
+.jukie-filter-field {
+	-webkit-border-image: none;
+	background: #1c1c20;
+	border: 1px solid #3a3a3f;
+	border-radius: 6px;
+	padding: 12px 10px;
+	min-height: 32px;
+	box-sizing: border-box;
+}
+.jukie-filter-field .hint-text,
+.jukie-filter-field .multiline-hint-text { color: #8a8a90; }
+
+/* ---- media rows (lists) ------------------------------------------------- */
+.jukie-list { background: #0b0b0d; }
+
+/* The framework draws a row's selected state as a border-IMAGE, and to make room
+   for it sets `border-width: 24px 20px` on .palm-row.selected. That artwork is a
+   light gradient that is invisible against this dark theme, but the 24px top and
+   bottom borders still occupy space - so tapping a row made it lurch ~48px taller
+   (visible on-device as a light border bleeding around the thumbnail and extra
+   gap above/below the tapped row).
+   Scoped to `.jukie-row.selected` requiring BOTH classes on the same element
+   previously regressed - confirmed on a real device screenshot that the bug came
+   right back, meaning the List widget doesn't reliably put `.selected` on the
+   exact element our own template class landed on. Targeting bare `.palm-row.selected`
+   with `!important` instead removes that assumption entirely: it wins regardless of
+   which element in a row actually gets `.selected`, and regardless of the
+   framework's own rule ordering. There's no legitimate case anywhere in this app
+   where the old light-gradient-on-dark-theme look would actually be wanted, so
+   this is safe to apply unscoped rather than per-template-class. */
+.palm-row.selected {
+	border-width: 0 !important;
+	-webkit-border-image: none !important;
+	background: rgba(250, 43, 86, 0.22) !important;
+}
+/* The framework ALSO compensates for that same border reservation on any
+   .palm-row-wrapper child (mainmenu's rows use that structure; media-row.html
+   doesn't) with `margin: -24px -20px` - meant to keep the wrapper's content
+   visually aligned once the row grows by that much. With the border zeroed
+   above, that negative margin has nothing left to compensate for, so it just
+   shrinks and shifts the wrapper on its own - confirmed on-device as the main
+   menu's tapped row rendering small and pulled up/left into the row above it.
+   Cancel it too. */
+.palm-row.selected > .palm-row-wrapper {
+	margin: 0 !important;
+}
+.jukie-media-row {
+	display: -webkit-box;
+	-webkit-box-align: center;
+	padding: 8px 12px;
+	border-bottom: 1px solid #1e1e22;
+}
+.jukie-thumb {
+	width: 48px;
+	height: 48px;
+	border-radius: 4px;
+	background-color: #202024;
+	background-size: cover;
+	background-position: center;
+	margin-right: 12px;
+	-webkit-box-flex: 0;
+	box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+.jukie-media-text { -webkit-box-flex: 1; overflow: hidden; }
+.jukie-media-primary { color: #ffffff; font-size: 16px; }
+.jukie-media-secondary { color: #9a9aa0; font-size: 13px; }
+
+/* Album-name group header (an artist's Songs list, grouped by album instead of A-Z) -
+   plain divs, not the framework's .palm-divider.labeled table (that one squashes its
+   label column down to a single character on this WebKit - see mainmenu's own history).
+   Arbitrary-length album names rule out reusing .palm-divider.alpha too (that one is
+   sized/centered for exactly one character). */
+.jukie-group-header { padding: 10px 12px 2px; }
+.jukie-group-header-label {
+	color: #9a9aa0;
+	font-size: 12px;
+	text-transform: uppercase;
+	font-weight: bold;
+	border-bottom: 1px solid #232327;
+	padding-bottom: 4px;
+}
+
+/* ---- now playing -------------------------------------------------------- */
+/* Budget for a 320x480 card: 52 header + ~150 art + ~66 text + ~34 scrubber +
+   ~56 controls + padding lands comfortably inside the screen, so the transport
+   never needs scrolling to reach. */
+.jukie-np { padding: 10px 16px; text-align: center; }
+.jukie-np-art {
+	width: 150px;
+	height: 150px;
+	margin: 2px auto 10px;
+	border-radius: 8px;
+	background-color: #202024;
+	background-size: cover;
+	background-position: center;
+	box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+}
+.jukie-np-title { color: #ffffff; font-size: 18px; font-weight: bold; }
+.jukie-np-artist { color: #fa2b56; font-size: 14px; margin-top: 2px; }
+.jukie-np-album { color: #9a9aa0; font-size: 12px; margin-top: 1px; }
+
+/* Times on their own line directly above the scrubber, pushed to its two ends.
+   They deliberately do NOT share a row with the Slider: that widget lays itself
+   out at full width regardless of the surrounding box, so it overlapped both
+   labels when they were siblings in a flex row.
+   Pushing the two labels apart uses a flex-grow spacer, not
+   -webkit-box-pack:justify - confirmed on a real device screenshot that this
+   WebKit ignores "justify" specifically (both labels rendered stuck together at
+   the left edge; pack:center elsewhere on this same page works fine). */
+.jukie-np-times {
+	display: -webkit-box;
+	-webkit-box-align: center;
+	color: #9a9aa0;
+	font-size: 11px;
+	/* Pulled in from 2px to roughly line up with the Slider's own visible track
+	   (its thumb/end-caps are inset from the container edge, so 2px left both
+	   labels sitting noticeably outside the track ends). Total top-to-slider space
+	   (margin-top + padding-bottom) is kept at 12px, same as before, so adding the
+	   padding-bottom below doesn't push the slider/controls down - it just carves
+	   part of that same 12px into a dedicated gap under the text instead of purely
+	   above it. */
+	margin: 8px 10px 0;
+	padding-bottom: 4px;
+}
+.jukie-np-times-spacer { -webkit-box-flex: 1; }
+.jukie-np-slider { margin: 0 0 6px; padding: 4px 0; }
+/* Palm's Slider widget draws itself with sprites, same as Enyo's Divider did in the
+   sibling app (see that app's jukie.css note on .enyo-divider-left-cap/divider.png) -
+   found the real classes by reading the on-device framework template/CSS directly
+   (templates/slider/*.html + stylesheets/global.css), not the SDK docs, which don't show
+   the internal markup:
+     .palm-slider-button     - the grabber/knob. Framework version is a 90x90 tap target
+                                (oversized on purpose, positioned via margin-top:-43px to
+                                center it on the track) with a 2-frame vertical sprite
+                                (default, then .selected/pressed at background-position-y:
+                                -90px). jukie-grabber.png is a single 25x24 image, not a
+                                sprite - center it in that same tap target rather than
+                                resizing the target, and cancel the pressed-state Y-shift
+                                (it would scroll our small image out of view entirely).
+     .palm-slider-background - the track. Framework version is a -webkit-border-image
+                                3-tile slice (0 4 0 4) of a wider source asset.
+                                jukie-slider.png is only 6x10 - a tileable swatch, not a
+                                3-tile source - so this uses the SAME plain repeat-x
+                                technique as the Enyo divider.png swap instead of trying
+                                to force it through border-image slicing. */
+.jukie-np-slider .palm-slider-button {
+	background: url(../images/jukie-grabber.png) center center no-repeat;
+}
+.jukie-np-slider .palm-slider-button.selected {
+	background-position: center center;
+}
+.jukie-np-slider .palm-slider-background {
+	border-width: 0;
+	-webkit-border-image: none;
+	background: url(../images/jukie-slider.png) left top repeat-x;
+	/* Track is 7px tall (framework's own .palm-slider-background rule) - half that rounds
+	   the ends into a full pill/capsule rather than just softening the corners. */
+	-webkit-border-radius: 4px;
+	border-radius: 4px;
+}
+.jukie-np-controls {
+	display: -webkit-box;
+	-webkit-box-pack: center;
+	-webkit-box-align: center;
+	margin-top: 6px;
+}
+
+/* Skip buttons: flat double-triangles either side of the play button. */
+.jukie-np-skip {
+	width: 52px;
+	height: 52px;
+	position: relative;
+	margin: 0 10px;
+	opacity: 0.85;
+}
+.jukie-np-skip:active { opacity: 0.45; }
+.jukie-np-skip:before,
+.jukie-np-skip:after {
+	content: "";
+	position: absolute;
+	top: 18px;
+	border-style: solid;
+	border-width: 8px 0 8px 13px;
+	border-color: transparent transparent transparent #f2f2f2;
+}
+.jukie-np-skip.is-next:before { left: 13px; }
+.jukie-np-skip.is-next:after  { left: 26px; }
+/* Mirror the same glyph for previous rather than redefining the borders. */
+.jukie-np-skip.is-prev { -webkit-transform: scaleX(-1); }
+.jukie-np-skip.is-prev:before { left: 13px; }
+.jukie-np-skip.is-prev:after  { left: 26px; }
+/* Wraps the button so the stock Spinner can sit exactly on top of it (same size,
+   same position) without affecting layout - see setBuffering() in the assistant. */
+.jukie-np-btn-wrap {
+	width: 64px;
+	height: 64px;
+	position: relative;
+	margin: 0 10px;
+}
+.jukie-np-btn-wrap .jukie-np-btn { margin: 0; }
+/* Sized to the ACTUAL "small" spinner (32px, per the SDK's own Spinner reference)
+   and centred with the same absolute+top/left:50%+negative-margin technique used
+   for the header pills - not flexbox. The Spinner widget renders its spinning
+   graphic as an element positioned relative to its own container (top:0/left:0
+   internally), which flex alignment on a PARENT can't reach: flexbox only aligns
+   normal-flow children, and an absolutely-positioned one ignores it entirely -
+   confirmed on-device as the spinner sitting in the top-left of its area instead
+   of centred. Giving the container itself the spinner's real size and centring
+   THAT (rather than trying to centre its content) sidesteps that limitation. */
+.jukie-np-spinner {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 32px;
+	height: 32px;
+	margin: -16px 0 0 -16px;
+}
+.jukie-np-btn {
+	width: 64px;
+	height: 64px;
+	border-radius: 32px;
+	background: #fa2b56;
+	position: relative;
+}
+.jukie-np-btn:active { background: #d81f45; }
+/* play = triangle */
+.jukie-np-btn.is-play:after {
+	content: "";
+	position: absolute;
+	top: 20px; left: 25px;
+	border-style: solid;
+	border-width: 12px 0 12px 20px;
+	border-color: transparent transparent transparent #ffffff;
+}
+/* pause = two bars */
+.jukie-np-btn.is-pause:before,
+.jukie-np-btn.is-pause:after {
+	content: "";
+	position: absolute;
+	top: 20px;
+	width: 7px; height: 24px;
+	background: #ffffff;
+	border-radius: 1px;
+}
+.jukie-np-btn.is-pause:before { left: 22px; }
+.jukie-np-btn.is-pause:after { right: 22px; }
+
+/* ---- preferences -------------------------------------------------------- */
+.jukie-group { margin: 10px 0; }
+.jukie-field-label { color: #9a9aa0; font-size: 12px; padding: 6px 12px 0; }
+.jukie-field { margin: 0 8px 6px; }
+.jukie-selector { margin: 4px 8px; }
+.jukie-btn-row { margin: 8px 12px; }
+
+/* ---- sync scrim --------------------------------------------------------- */
+/* .palm-scrim is the framework's own full-screen dim layer; this just centres a
+   status line under the stock spinner it contains. */
+.jukie-scrim-msg {
+	color: #ffffff;
+	font-size: 16px;
+	text-align: center;
+	margin-top: 12px;
+}
+
+/* ---- search ------------------------------------------------------------- */
+.jukie-search-bar {
+	padding: 8px 10px;
+	background: #131316;
+	border-bottom: 1px solid #232327;
+}
+/* Overriding the framework's own textfield chrome entirely rather than patching
+   its dark-theme variant: this field's `focused` state was rendering with a WHITE
+   background and white hint text (unreadable), and separately the field's own
+   height wasn't stable between focused/unfocused, so the Search button below it
+   would visually overlap the hint text when unfocused. A fixed min-height plus a
+   flat dark background/border sidesteps both at once, regardless of which
+   focus-state border-image asset the framework would otherwise swap in. */
+.jukie-search-field {
+	margin-bottom: 8px;
+	-webkit-border-image: none;
+	/* background: #1c1c20; */
+	/* border: 1px solid #3a3a3f; */
+	/* border-radius: 6px; */
+	padding: 12px 10px;
+	min-height: 20px;
+	box-sizing: border-box;
+}
+.jukie-search-field .hint-text,
+.jukie-search-field .multiline-hint-text { color: #8a8a90; }
+.jukie-search-btn { margin-top: 2px; }
+
+/* Search-type picker pill (Artist/Song/Album), header-mode-source pattern - see
+   search-scene.html and search-assistant.js. dropdown-red.png (46x33) already has
+   its down-arrow baked into the right end, so the slice keeps that whole end fixed
+   (border-width right:22) and only stretches the plain-color band between the left
+   cap and the arrow to fit the label ("Artist" is the longest of the three).
+   Absolutely positioned + top:50%/margin-top to centre on the header's actual
+   height (matching .jukie-nowplaying-btn's approach - see the note above it) -
+   `position:absolute` here still works fine as the positioning context for the
+   hit-target child below, same as `relative` did. */
+.jukie-type-source {
+	position: relative;
+	float: right;
+	margin: 8px -16px 8px 0;
+	color: #fff;
+	font-size: 14px;
+	font-weight: bold;
+	text-transform: uppercase;
+	height: 30px;
+	line-height: 30px;
+	border-width: 0 22px 0 15px;
+	-webkit-border-image: url(../images/dropdown-red.png) 0 22 0 15 stretch stretch;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+}
+.jukie-type-label {
+	padding-left: 2px;
+	width: 42px;
+	text-align: center;
+	white-space: nowrap;
+	overflow: hidden;
+}
+/* Oversized invisible tap target: the visible pill is short, but a 320px-wide device
+   still needs a comfortably large hit area - same reasoning as the reference app's
+   header-mode-hit-target. */
+.jukie-type-hit-target {
+	position: absolute;
+	top: -10px; left: -14px; right: -10px; bottom: -10px;
+}
+
+/* ---- exhibition mode ------------------------------------------------------
+   Visual port of com.achunt.jukie/exhibition/exhibitionView.css (the working Enyo/
+   TouchPad version) - same layer stack, same numbers, same transport-button design
+   (translucent dark circle so a white glyph reads against ANY album art). The
+   -webkit-box flex bits (times spacer, transport row) reuse the exact techniques
+   already proven on Now Playing in this same file, not Enyo's flexbox model. */
+.jukie-exh {
+	position: absolute;
+	top: 0; left: 0; right: 0; bottom: 0;
+	background: #000;
+	color: #fff;
+	overflow: hidden;
+}
+.jukie-exh-art {
+	position: absolute;
+	top: 0; left: 0; right: 0; bottom: 0;
+	background-color: #111;
+	background-position: center;
+	background-size: cover;
+}
+.jukie-exh-scrim {
+	position: absolute;
+	top: 0; left: 0; right: 0; bottom: 0;
+	background: -webkit-gradient(linear, 0% 30%, 0% 100%, from(rgba(0,0,0,0.15)), to(rgba(0,0,0,0.80)));
+}
+.jukie-exh-content {
+	position: absolute;
+	top: 0; left: 0; right: 0; bottom: 0;
+	padding: 20px 28px;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+}
+.jukie-exh-clockrow {
+	position: absolute;
+	top: 20px; right: 28px;
+}
+/* Bottom-weighted info block, positioned directly rather than via a
+   position:absolute + display:-webkit-box parent (.jukie-exh-content above) -
+   that combination isn't used anywhere else in this file (every other
+   -webkit-box block here is a normal-flow element), so rather than trust it on
+   this old WebKit, this reuses .jukie-exh-clockrow's already-proven plain
+   absolute-positioning approach instead. */
+.jukie-exh-bottom {
+	position: absolute;
+	left: 28px; right: 28px; bottom: 20px;
+}
+.jukie-exh-clock {
+	font-size: 34px;
+	font-weight: bold;
+	color: #fff;
+	text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+.jukie-exh-album {
+	font-size: 13px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: rgba(255,255,255,0.75);
+	text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+.jukie-exh-title {
+	font-size: 30px;
+	font-weight: bold;
+	line-height: 1.2em;
+	color: #fff;
+	text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+.jukie-exh-artist {
+	font-size: 18px;
+	color: rgba(255,255,255,0.85);
+	text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+	margin-bottom: 8px;
+}
+/* Same flex-grow-spacer technique as .jukie-np-times: this WebKit doesn't honor
+   -webkit-box-pack:justify (confirmed on-device on Now Playing), only pack:center/
+   start/end and box-flex on children. */
+.jukie-exh-times {
+	display: -webkit-box;
+	-webkit-box-align: center;
+	font-size: 14px;
+	color: rgba(255,255,255,0.7);
+	text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+	margin-bottom: 16px;
+}
+.jukie-exh-times-spacer { -webkit-box-flex: 1; }
+.jukie-exh-transport {
+	display: -webkit-box;
+	-webkit-box-pack: center;
+	-webkit-box-align: center;
+}
+/* Transport glyphs sit on a subtle translucent dark disc, not a solid red button
+   (unlike Now Playing) - deliberately so they read against bright AND dark album
+   art alike, matching the confirmed-working Enyo design's own reasoning. */
+.jukie-exh-btn,
+.jukie-exh-btn-wrap {
+	width: 64px;
+	height: 64px;
+	margin: 0 16px;
+	position: relative;
+}
+.jukie-exh-btn-wrap .jukie-exh-btn { margin: 0; }
+.jukie-exh-btn {
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.22);
+}
+.jukie-exh-btn:active { background: rgba(0, 0, 0, 0.42); }
+.jukie-exh-btn.is-play:after {
+	content: "";
+	position: absolute;
+	top: 20px; left: 25px;
+	border-style: solid;
+	border-width: 12px 0 12px 20px;
+	border-color: transparent transparent transparent #ffffff;
+}
+.jukie-exh-btn.is-pause:before,
+.jukie-exh-btn.is-pause:after {
+	content: "";
+	position: absolute;
+	top: 20px;
+	width: 7px; height: 24px;
+	background: #ffffff;
+	border-radius: 1px;
+}
+.jukie-exh-btn.is-pause:before { left: 22px; }
+.jukie-exh-btn.is-pause:after { right: 22px; }
+.jukie-exh-btn.is-prev:before,
+.jukie-exh-btn.is-prev:after,
+.jukie-exh-btn.is-next:before,
+.jukie-exh-btn.is-next:after {
+	content: "";
+	position: absolute;
+	top: 22px;
+	border-style: solid;
+	border-width: 10px 0 10px 16px;
+	border-color: transparent transparent transparent #ffffff;
+}
+.jukie-exh-btn.is-next:before { left: 16px; }
+.jukie-exh-btn.is-next:after  { left: 29px; }
+.jukie-exh-btn.is-prev { -webkit-transform: scaleX(-1); }
+.jukie-exh-btn.is-prev:before { left: 16px; }
+.jukie-exh-btn.is-prev:after  { left: 29px; }
+/* Sized/centred to the real 32px "small" spinner - see the identical note on
+   .jukie-np-spinner for why flexbox alone can't centre this widget's own content. */
+.jukie-exh-spinner {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 32px;
+	height: 32px;
+	margin: -16px 0 0 -16px;
+}

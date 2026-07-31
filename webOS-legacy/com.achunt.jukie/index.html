@@ -1,35 +1,39 @@
 <!doctype html>
 <html>
 <head>
-    <title>JukieLauncher</title>
-	<meta name="apple-mobile-web-app-capable" content="yes">
+	<title>Jukie</title>
 	<meta name="viewport" content="width=device-width initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-	<script src="/usr/palm/frameworks/enyo/0.10/framework/enyo.js" launch="nobridge" type="text/javascript"></script> 
-	<!--<script src="/usr/palm/frameworks/enyo/0.10/framework/enyo.js" type="text/javascript"></script>-->
-    <script type="text/javascript">
-        // enyo does not release its resources when it is run on desktop browsers, which recalls
-        // the old window instances from the previous session on page refresh/reload.  The following
-        // piece of code clears out enyo's left-over windows before each page reload running Safari on
-        // desktop making sure that no left-over windows are recalled on page reload.
-        if (!window.PalmSystem) {
-             var windows = enyo.windows.getWindows(), w;
-             for (w in windows) if (windows.hasOwnProperty(w)) {
-                 enyo.windows.manager.removeWindow(windows[w]);
-             }
-         };
-     </script>
 </head>
-<body>
+<body style="background:#000;">
 
 <script type="text/javascript">
-(function () {
-	var musicAppLauncher = new MusicAppLauncher();
-		enyo.applicationRelaunchHandler = function (params) {      // attach relaunch handler
-		musicAppLauncher.applicationRelaunchHandler(params);
-		return true;
-	};
-	musicAppLauncher.startup();
-})();
+	// Framework-less device switcher: this package bundles both a Mojo (webOS 2.x)
+	// and an Enyo (webOS 3.x) build of Jukie under one app id, since a webOS package
+	// can only declare one "app" entry (confirmed against the packageinfo.json
+	// schema) - this bootstrap is that one entry, and it just picks which real one
+	// to load. Modeled directly on a real shipped app that does the same thing:
+	// dev-stuff/com.preciouscoders.pre.auctionmatepro/index.html.
+	(function () {
+		var loc = window.location.href;
+		var path = loc.substr(0, loc.lastIndexOf("/") + 1);
+		var target = "enyo/index.html"; // default - Enyo/webOS3 is the long-proven build;
+		                                 // fall through to it if detection is unavailable
+		                                 // or ambiguous, same failure-mode choice the
+		                                 // reference app makes.
+
+		if (window.PalmSystem) {
+			try {
+				var deviceInfo = JSON.parse(PalmSystem.deviceInfo);
+				if (deviceInfo["platformVersionMajor"] < 3) {
+					target = "mojo/index.html";
+				}
+			} catch (e) {
+				// malformed/unexpected deviceInfo - keep the Enyo default
+			}
+		}
+
+		window.location.replace(path + target);
+	})();
 </script>
 
 </body>

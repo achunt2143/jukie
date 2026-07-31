@@ -7,7 +7,7 @@ enyo.kind(
 		{name: "PlaybackList", kind: "kindPlaybackList", onShuffleChanged: "doPlaybackShuffleChanged", onRepeatChanged: "doPlaybackRepeatChanged", onStrOriginListIDChanged: "doPlaybackListIDChanged"},
 		{name: "AudioPlayer", kind: "kindAudioPlayer", onTimeUpdate: "onTimeChanged", onPlaying: "onAudioPlaying", onPaused: "onAudioPaused", onEnded: "onEnded", onError: "onAudioError", onBuffering: "onAudioBuffering"}
 	],
-	events: {onTrackPlaying: "", onSongEnd: "", onTrackEnded: "", onTrackSrcChanged: "", onUpdateTrackInfo: "", onUpdateTrackTime: "", onPlaybackShuffleChanged: "", onPlaybackRepeatChanged: "", onTrackPausePlay: "", onPlaybackListSet: "", onPlaybackListIDChanged: "", onTrackBuffering: ""},
+	events: {onTrackPlaying: "", onSongEnd: "", onTrackEnded: "", onTrackSrcChanged: "", onUpdateTrackInfo: "", onUpdateTrackTime: "", onPlaybackShuffleChanged: "", onPlaybackRepeatChanged: "", onTrackPausePlay: "", onPlaybackListSet: "", onPlaybackListIDChanged: "", onTrackBuffering: "", onPermissionError: ""},
 	published: {boolPlaybackListSet: false, boolSuspendUpdates: false, boolSuspendPlayback: false, intUpdateRate: 333},
 
 	intErrorCount: 0,
@@ -282,6 +282,16 @@ enyo.kind(
 		this.log("Audio playback error", payload && payload.error);
 		this.stopTrackTimeUpdate();
 
+		// Bubble this specific case all the way up to app.js regardless of the
+		// retry/skip-track logic below - jukie-drm's executable bit not surviving
+		// packaging/install on this device (see JukieAudioService.js's own comment) has a
+		// real, actionable on-device fix, so it deserves an actual message instead of
+		// silently skipping to the next track like a generic playback error.
+		if (payload && payload.permissionError)
+		{
+			this.doPermissionError();
+		}
+
 		if (this.intErrorCount < this.INT_ERROR_MAX)
 		{
 			this.intErrorCount++;
@@ -491,5 +501,23 @@ enyo.kind(
 	getTrackList: function()
 	{
 		return this.$.PlaybackList.getPlaybackList();
+	},
+
+	// Snapshot of the current session for persistence (see utility/playbacksession.js).
+	// Everything Exhibition Mode needs to resume "where we left off": the queue, which
+	// track, the position within it, and the play/shuffle/repeat state.
+	getSessionSnapshot: function ()
+	{
+		var pl = this.$.PlaybackList;
+		return {
+			queue: pl.getPlaybackList(),
+			index: pl.getIntCurrTrackIndex(),
+			position: this.getTrackCurrentTime(),
+			playing: this.$.AudioPlayer.isPlaying(),
+			shuffle: pl.getShuffleState(),
+			repeat: pl.getRepeatMode(),
+			originListID: pl.getStrOriginListID(),
+			listQuery: pl.getListQuery()
+		};
 	}
 });

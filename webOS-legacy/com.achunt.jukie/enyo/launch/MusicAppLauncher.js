@@ -8,6 +8,17 @@
 			  windowName: "com.achunt.jukie",
 			  path: "main.html",
 			  state: "unknown"
+		 },
+		 exhibition:
+		 {
+			  windowName: "com.achunt.jukie.exhibition",
+			  path: "exhibition.html",
+			  state: "unknown",
+			  // Must open as a real dock-mode window, not a plain card. Without this,
+			  // webOS's Exhibition manager doesn't recognize our window as the dock
+			  // surface and reverts to the default Clock app after ~a minute. Mirrors
+			  // the AccuWeather Enyo sample's openWindow(...,{window:"dockMode"}).
+			  attributes: {window: "dockMode"}
 		 }
 	},
 	
@@ -17,6 +28,7 @@
 	startup: function()
 	{
 		this.log();
+		this.hardenWindowManager();
 		var paramString = window.PalmSystem && PalmSystem.launchParams || "{}";
 		this.log("paramString: ", paramString);
 		this.startParams = JSON.parse(paramString);
@@ -24,6 +36,41 @@
 		this.activateApp(this.appSelect());
 	},
 	
+	/**
+	 * Harden a framework/platform gap exposed by the Exhibition (dock-mode) window.
+	 *
+	 * A dock-mode window is cross-process, so on this WebKit the "enyoWindowReady"
+	 * postMessage it sends to its opener (this root window) arrives with an UNDEFINED
+	 * message source. enyo's message listener then calls
+	 * enyo.windows.manager.executePendingWindowParams(e.source), which dereferences
+	 * inWindow.name (via getWindowName) and throws an uncaught TypeError on every dock
+	 * entry. The pending-params flush can't do anything for a cross-process window anyway
+	 * (its name isn't readable here, so the pending list is keyed by `undefined` and is
+	 * always empty), so skipping when the source is missing is strictly safe - it only
+	 * silences the noise. Wrap once, forwarding all real windows through untouched.
+	 */
+	hardenWindowManager: function ()
+	{
+		try
+		{
+			var mgr = enyo.windows && enyo.windows.manager;
+			if (mgr && !mgr._jukieHardened)
+			{
+				var orig = mgr.executePendingWindowParams;
+				mgr.executePendingWindowParams = function (inWindow)
+				{
+					if (!inWindow) { return; }
+					return orig.apply(this, arguments);
+				};
+				mgr._jukieHardened = true;
+			}
+		}
+		catch (err)
+		{
+			this.log("hardenWindowManager failed (non-fatal):", err);
+		}
+	},
+
 	/**
 	 * This is the callback handler responding to the enyo's application relaunch event.
 	 */
@@ -46,9 +93,14 @@
 	appSelect: function ()
 	{
 	  this.log();
-		 var launchParams = null, app = this.faces.musicplayer;
-	
-		 return app;
+	  this.log("startParams: ", this.startParams);
+		 // Placed on (or launched from) the Touchstone dock -> show Exhibition Mode instead
+		 // of the regular player. See faces.exhibition / exhibition.html.
+		 if (this.startParams && this.startParams.windowType === "dockModeWindow" && this.startParams.dockMode === true)
+		 {
+			  return this.faces.exhibition;
+		 }
+		 return this.faces.musicplayer;
 	},
 	
 	/**
@@ -78,7 +130,7 @@
 	  this.log("PATH IS ", path);
 	  
 		this.log("this.startParams: ", this.startParams);
-	  enyo.windows.activate(app.path,app.windowName,this.startParams);
+	  enyo.windows.activate(app.path,app.windowName,this.startParams,app.attributes);
 	  
 	  allwindows = enyo.windows.getWindows();
 	  for (var win in allwindows)

@@ -19,8 +19,10 @@ enyo.kind({
 		{name: "Settings", kind: "kindSettings"},
 		{name: "MediaIndex", kind: "kindMediaIndex", onSetPlaybackList: "onSetPlaybackList"},
 		{name: "PlaylistManager", kind: "kindPlaylistManager", onRequestMedia: "onRequestMedia_ListView", onRefreshPlaylists: "refreshPlaylists", onPlaylistDeleted: "onPlaylistDeleted"},
-		{name: "Playback", kind: "kindPlayback", onPlaybackListIDChanged: "onPlaybackListIDChanged", onSongEnd: "onSongEnd", onTrackPlaying: "onTrackPlaying", onTrackEnded: "onTrackEnded", onTrackPausePlay: "onTrackPausePlay", onTrackSrcChanged: "onTrackSrcChanged", onUpdateTrackInfo: "onUpdateTrackInfo", onUpdateTrackTime: "onUpdateTrackTime", onPlaybackShuffleChanged: "onShuffleChanged_Playback", onPlaybackRepeatChanged: "onRepeatChanged_Playback", onPlaybackListSet: "onPlaybackListSet", onTrackBuffering: "onTrackBuffering"},
+		{name: "Playback", kind: "kindPlayback", onPlaybackListIDChanged: "onPlaybackListIDChanged", onSongEnd: "onSongEnd", onTrackPlaying: "onTrackPlaying", onTrackEnded: "onTrackEnded", onTrackPausePlay: "onTrackPausePlay", onTrackSrcChanged: "onTrackSrcChanged", onUpdateTrackInfo: "onUpdateTrackInfo", onUpdateTrackTime: "onUpdateTrackTime", onPlaybackShuffleChanged: "onShuffleChanged_Playback", onPlaybackRepeatChanged: "onRepeatChanged_Playback", onPlaybackListSet: "onPlaybackListSet", onTrackBuffering: "onTrackBuffering", onPermissionError: "onPlaybackPermissionError"},
 		{name: "DashboardManager", kind: "kindDashboardManager"},
+		{name: "ExhibitionManager", kind: "kindExhibitionManager"},
+		{name: "PlaybackSession", kind: "kindPlaybackSession"},
 
 		{name: "paneAll", className: "wrapper", flex: 1, height: "100%", width: "100%", kind: "Pane", components: [
 			{kind: "VFlexBox", tapHighlight: true, components: [
@@ -84,6 +86,7 @@ enyo.kind({
 		]},
 		{kind: "AppMenu", components: [
 			{caption: $L("Preferences"), onclick: "openSettings"},
+			{caption: $L("Exhibition Mode"), onclick: "onClick_ExhibitionMode"},
 			{caption: $L("Help"), onclick: "openHelp"}
 		]},
 		// Blocks app usage while a library refresh is in flight (replaces a small
@@ -111,6 +114,8 @@ enyo.kind({
 
 	ListView: null,
 	cacheTrackInfo: null,
+	cacheBoolAudioPlaying: false,
+	cacheTrackTimes: null,
 	showParams: {},
 
 	handleLaunch: function (launchParams)
@@ -195,6 +200,40 @@ enyo.kind({
 	onLibrarySyncError: function (sender, payload)
 	{
 		this.log("library sync error", payload && payload.error);
+	},
+
+	// jukie-drm's executable bit not surviving packaging/install on this device (confirmed
+	// on a real Pre2 even with the package-level chmod fix - see JukieAudioService.js's own
+	// comment and post-install-jukie.ps1) is a real, recurring failure mode with a real,
+	// on-device fix - so surface it as an actionable message instead of playback just
+	// silently skipping to the next track. Bubbled here from kindPlayback.onAudioError via
+	// onPermissionError; see that file's own comment for the full chain. Built as a
+	// dynamically-created ModalDialog (there's no static one declared anywhere in this
+	// tree to reuse) and cached on first use so a second occurrence doesn't pile up dead
+	// popup nodes.
+	onPlaybackPermissionError: function ()
+	{
+		if (!this.$.permissionErrorDialog)
+		{
+			this.createComponent({
+				name: "permissionErrorDialog", kind: "ModalDialog", caption: "Permissions bug",
+				components: [
+					{content: "Hey!! Looks like you've ran into the permissions bug! Plug me " +
+						"in to novaterm and run this command: chmod +x " +
+						"/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/jukie-drm-webos2 " +
+						"/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/jukie-drm-webos3",
+						style: "padding: 12px;"},
+					{kind: "Button", caption: "OK", onclick: "closePermissionErrorDialog", style: "margin: 12px;"}
+				]
+			}, {owner: this});
+			this.$.permissionErrorDialog.render();
+		}
+		this.$.permissionErrorDialog.openAtCenter();
+	},
+
+	closePermissionErrorDialog: function ()
+	{
+		this.$.permissionErrorDialog.hide();
 	},
 
 	ready: function ()
@@ -536,6 +575,11 @@ enyo.kind({
 	unloadHandler: function ()
 	{
 		this.log();
+		// Capture the resume point BEFORE we stop playback, so a later dock (with Jukie
+		// closed) can pick up where we left off. Best-effort: the async db8 write may not
+		// finish before the process is killed, but the throttled periodic saves already
+		// keep the stored position within ~7s, so at worst we lose a few seconds.
+		this.saveSessionProgress();
 		// App is closing/swiped away -> stop the service so it doesn't keep playing in
 		// the background. (Minimizing fires windowDeactivated/Hidden, not unload, so this
 		// only stops on a real close, not a minimize.)
@@ -583,6 +627,22 @@ enyo.kind({
 		if (enyo.windowParams.action && enyo.windowParams.action === "show")
 		{
 			this.showContentItem(enyo.windowParams.showparams);
+		}
+		if (enyo.windowParams.requestExhibitionSync)
+		{
+			// Exhibition window just opened and has no track data of its own (it lives in
+			// a separate window/JS context - see utility/exhibitionmanager.js) - resend it
+			// everything we currently know instead of leaving it blank until the next
+			// natural track-change event.
+			if (this.cacheTrackInfo)
+			{
+				this.$.ExhibitionManager.pushTrackInfo(this.cacheTrackInfo);
+			}
+			this.$.ExhibitionManager.pushPlayState(this.cacheBoolAudioPlaying);
+			if (this.cacheTrackTimes)
+			{
+				this.$.ExhibitionManager.pushTrackTime(this.cacheTrackTimes);
+			}
 		}
 	},
 
@@ -749,6 +809,8 @@ enyo.kind({
 		this.log();
 		this.cacheTrackInfo = objTrackInfo;
 		this.sendTrackInfo(true);
+		// New track within the same queue -> persist the new index (position resets to 0).
+		this.saveSessionProgress();
 	},
 
 	sendTrackInfo: function (boolShowBanner, objParams)
@@ -758,6 +820,7 @@ enyo.kind({
 		{
 			this.$.PlayerControl.updateTrackInfoDisplay(this.cacheTrackInfo);
 			this.$.DashboardManager.updateControlDashboardInfo(this.cacheTrackInfo, this.boolWindowActive, boolShowBanner);
+			this.$.ExhibitionManager.pushTrackInfo(this.cacheTrackInfo);
 			if (this.ListView && this.ListView.highlightTrack !== undefined)
 			{
 				var jump = false;
@@ -796,11 +859,15 @@ enyo.kind({
 		this.log("boolAudioPlaying", boolAudioPlaying);
 		this.$.PlayerControl.setPlayPause(boolAudioPlaying);
 		this.$.DashboardManager.setPlayPause(boolAudioPlaying);
+		this.cacheBoolAudioPlaying = boolAudioPlaying;
+		this.$.ExhibitionManager.pushPlayState(boolAudioPlaying);
 		if (this.boolAlbumArtViewDisplay)
 		{
 			this.$.AlbumArtView.setPlayPause(boolAudioPlaying);
 		}
 		this.updateBroadcaster({type: "playChanged", boolPlaying: boolAudioPlaying});
+		// Persist the play/pause transition + current position (a natural resume point).
+		this.saveSessionProgress();
 	},
 
 	onUpdateTrackInfo: function ()
@@ -810,6 +877,10 @@ enyo.kind({
 	onUpdateTrackTime: function (sender, objTrackTimes)
 	{
 		this.$.PlayerControl.updateTrackTimeDisplay(objTrackTimes);
+		this.cacheTrackTimes = objTrackTimes;
+		this.$.ExhibitionManager.pushTrackTime(objTrackTimes);
+		// Keep the persisted resume position roughly current (throttled to ~7s).
+		this.maybeSaveSessionProgress();
 	},
 
 	resetScrollWatch: function ()
@@ -884,6 +955,53 @@ enyo.kind({
 		this.onControlsEnabled(null, boolPlaybackListSet, boolPlaybackListSet);
 		this.updateBroadcaster({type: "playlistStart", intTrackCount: intTrackCount, strShuffle: strShuffle, strRepeat: strRepeat});
 		this.boolPlaybackListSet = boolPlaybackListSet;
+		// The queue just changed - persist the WHOLE session (queue + index + modes) so
+		// Exhibition Mode can resume it when docked while Jukie isn't running. This is the
+		// only heavy (full-queue) write; ongoing position/index updates go through the
+		// lighter saveSessionProgress() below.
+		this.saveSessionFull();
+	},
+
+	// --- Playback-session persistence (for Exhibition Mode resume) --------------------
+	// All saves are best-effort and fully guarded: a persistence hiccup must never disturb
+	// playback. See utility/playbacksession.js and the Exhibition standalone-resume path.
+
+	saveSessionFull: function ()
+	{
+		try
+		{
+			this.$.PlaybackSession.save(this.$.Playback.getSessionSnapshot());
+		}
+		catch (err)
+		{
+			this.log("saveSessionFull error:", err);
+		}
+	},
+
+	saveSessionProgress: function ()
+	{
+		try
+		{
+			if (!this.boolPlaybackListSet) { return; }
+			var snap = this.$.Playback.getSessionSnapshot();
+			this.$.PlaybackSession.saveProgress(snap.index, snap.position, snap.playing);
+		}
+		catch (err)
+		{
+			this.log("saveSessionProgress error:", err);
+		}
+	},
+
+	// Throttle position writes to db8 to at most once per PROGRESS_SAVE_MS so a per-track
+	// tick doesn't hammer the database.
+	PROGRESS_SAVE_MS: 7000,
+	_lastProgressSaveAt: 0,
+	maybeSaveSessionProgress: function ()
+	{
+		var now = Date.now();
+		if (now - this._lastProgressSaveAt < this.PROGRESS_SAVE_MS) { return; }
+		this._lastProgressSaveAt = now;
+		this.saveSessionProgress();
 	},
 
 	onShuffleClick_PlayModeControls: function ()
@@ -1824,6 +1942,13 @@ enyo.kind({
 	onClick_ExhibitionMode: function ()
 	{
 		this.log();
+		// Manual trigger (AppMenu > Exhibition Mode) - opens the same dock-mode window a
+		// real Touchstone dock relaunch would open (see launch/MusicAppLauncher.js's
+		// exhibition face). Same {window:"dockMode"} attribute so there's exactly one
+		// window type in play - opening it as a plain card here and as dockMode from the
+		// dock would leave a stale card that a later dock relaunch would just re-activate
+		// instead of upgrading. No physical dock hardware needed to test.
+		enyo.windows.activate("exhibition.html", "com.achunt.jukie.exhibition", {}, {window: "dockMode"});
 	},
 
 	onClick_btnBackAlbumArtView: function ()

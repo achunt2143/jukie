@@ -1,0 +1,122 @@
+@charset "UTF-8";
+html, body {
+	background: #000;
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+}
+.jukieExhibition {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: #000;
+	color: #fff;
+	font-family: inherit;
+}
+.jukieExhibition .exh-art {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #111;
+	background-position: center center;
+	background-repeat: no-repeat;
+	background-size: cover;
+}
+.jukieExhibition .exh-scrim {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: -webkit-gradient(linear, 0% 30%, 0% 100%, from(rgba(0,0,0,0.15)), to(rgba(0,0,0,0.80)));
+}
+.jukieExhibition .exh-content {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	padding: 24px 36px;
+}
+.jukieExhibition .exh-clock {
+	font-size: 42px;
+	font-weight: bold;
+	color: #fff;
+	text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+.jukieExhibition .exh-bottom {
+	padding-bottom: 8px;
+}
+.jukieExhibition .exh-album {
+	font-size: 16px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: rgba(255,255,255,0.75);
+	text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+.jukieExhibition .exh-title {
+	font-size: 44px;
+	font-weight: bold;
+	line-height: 1.2em;
+	color: #fff;
+	text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+.jukieExhibition .exh-artist {
+	font-size: 24px;
+	color: rgba(255,255,255,0.85);
+	text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+	margin-bottom: 10px;
+}
+.jukieExhibition .exh-timerow {
+	font-size: 16px;
+	color: rgba(255,255,255,0.7);
+	margin-bottom: 20px;
+}
+.jukieExhibition .exh-transport {
+	padding-top: 4px;
+}
+/* Transport glyphs are the dashboard sprite set (btn_dashboard_*.png), near-white (built
+   for the dark notification banner). They sit on a SUBTLE translucent dark disc - just
+   enough of a darkening to guarantee contrast for the white glyph on a bright album, while
+   the bottom scrim already darkens this zone. Deliberately no border ring and no
+   drop-shadow (those read as a clunky old-style button); the disc is a soft, barely-there
+   backing, not a chrome button. Glyphs at native 32px (crisp, no upscale) inside a larger
+   circle that provides the big glance-and-tap target. */
+.jukieExhibition .exh-transport .exh-btn.enyo-button {
+	-webkit-border-image: none;
+	border: 0;
+	min-width: 0;
+	padding: 0;
+	margin: 0 16px;
+	width: 64px;
+	height: 64px;
+	-webkit-border-radius: 50%;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.22);
+}
+.jukieExhibition .exh-transport .exh-btn.enyo-button-down {
+	background: rgba(0, 0, 0, 0.42);
+}
+/* 32px native glyph centered in the 64px circle: (64-32)/2 = 16px margin (tighter disc). */
+.jukieExhibition .exh-transport .exh-btn .enyo-button-icon {
+	width: 32px;
+	height: 32px;
+	margin: 16px;
+	background-repeat: no-repeat;
+	background-position: 0 0;
+}
+/* btn_dashboard_play.png is 64x64 = a 2x2 grid of 32px cells: col0 (x=0) = play triangle,
+   col1 (x=-32) = pause bars (row1 at y=-32 is the pressed art, unused here). Show pause
+   bars while playing, the play triangle when paused - the same mapping dashControls.css
+   uses. prev/next (btn_dashboard_prev/next.png, 32x64) just use their top cell (0 0), from
+   the base rule above. */
+.jukieExhibition .exh-transport .exh-btn.play .enyo-button-icon {
+	background-position: -32px 0;
+}
+.jukieExhibition .exh-transport .exh-btn.play.paused .enyo-button-icon {
+	background-position: 0 0;
+}

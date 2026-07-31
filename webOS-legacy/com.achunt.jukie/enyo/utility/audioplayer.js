@@ -237,7 +237,13 @@ enyo.kind(
 			buffering: !!response.buffering,
 			position: Utilities.isNumeric(response.position) ? response.position : 0,
 			duration: Utilities.isNumeric(response.duration) && response.duration > 0 ? response.duration : 30,
-			volume: Utilities.isNumeric(response.volume) ? response.volume : this._status.volume
+			volume: Utilities.isNumeric(response.volume) ? response.volume : this._status.volume,
+			error: response.error || "",
+			// True when the service's last jukie-drm spawn failed because the binary
+			// wasn't executable on this device (see JukieAudioService.js's own comment) -
+			// distinct from a generic playback error so the app can show something
+			// actionable. Bubbled up through doError's payload below.
+			permissionError: !!response.permissionError
 		};
 
 		this._emitTransitions();
@@ -271,7 +277,7 @@ enyo.kind(
 				this._stopPolling();
 				break;
 			case "error":
-				this.doError({error: this._status.error || "playback error"});
+				this.doError({error: this._status.error || "playback error", permissionError: this._status.permissionError});
 				this._stopPolling();
 				break;
 			}

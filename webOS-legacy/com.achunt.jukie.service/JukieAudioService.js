@@ -38,6 +38,19 @@
  * already operates on for pause), and pactl can set THAT ONE stream's volume independently of
  * the shared sink/system level (confirmed live: the sink itself always sits at 100%/0dB - all
  * per-stream gain happens at the sink-input layer). See setVolume()/_applyVolume().
+ *
+ * OPEN FINDING (2026-07-30, not yet investigated/fixed): on-device testing showed the
+ * VERY FIRST track played after a fresh service start plays at full volume, ignoring the
+ * hardware volume rocker entirely - but starting with the SECOND track, the hardware
+ * rocker correctly controls it (the stream gets recognized as "Media volume" like any
+ * other app). This means the earlier "no way to respect system volume" conclusion above
+ * may be incomplete: whatever categorizes a PulseAudio sink-input as rocker-controllable
+ * "media" (likely a stream property/role tag, e.g. media.role, that pulsesink either
+ * doesn't set on the FIRST connection of a fresh gst-launch/pulsesink pairing, or that
+ * takes one cycle to get picked up by whatever routes volume-key events) is plausibly
+ * fixable without needing the privileged com.palm.audio/system API at all. Worth
+ * `pactl list sink-inputs` on the very first vs. second track's sink-input to diff their
+ * properties before assuming this needs the privileged API / a com.palm.* app id.
  */
 require = IMPORTS.require;
 var cp = require('child_process');
@@ -47,16 +60,25 @@ var GST = '/usr/bin/gst-launch-0.10';
 var PACTL = '/usr/bin/pactl';
 var SINK = 'pcm_output'; // the ALSA output sink (from module-alsa-sink sink_name)
 var CURL = '/usr/bin/curl'; // jail wrapper that sets CA bundle + LD_LIBRARY_PATH
-var FFMPEG = '/usr/bin/ffmpeg';
+var DD = '/bin/dd';
 var TMP_FILE = '/tmp/jukie-preview.m4a'; // /tmp is writable inside the jail
-var SEEK_FILE = '/tmp/jukie-seek.m4a'; // ffmpeg's seek-fragment output, overwritten per seek
+var SEEK_FILE = '/tmp/jukie-seek.m4a'; // seek-fragment output, overwritten per seek
 var DEFAULT_PREVIEW_DURATION = 30; // Apple preview clips are ~30s; refined if known
 
 // jukie-drm: our static ARM helper that does the full-track Apple Music Widevine flow
 // (webPlayback -> license -> download -> decrypt) and writes a plain .m4a. It lives in
 // this service dir (so device.wvd + secrets.local.json sit next to it). Output goes to
 // a song-id-keyed path in /tmp, which doubles as a simple session cache.
-var DRM = '/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/jukie-drm';
+//
+// The package ships BOTH webOS-version builds (see jukie-drm/build.ps1) so the one
+// package works on either device - which one actually gets exec'd is decided here, at
+// service load, by the exact same hardware probe used below to pick the AAC decode path
+// (hardwareAACAvailable(), defined further down - hoisted, so callable here): a
+// TouchPad/webOS3-class jail can reach the DSP, a webOS2-class jail (Pre2 and older)
+// cannot. Reusing that one probe for both decisions keeps this to a single source of
+// truth instead of a second device check that could drift out of sync with the first.
+var DRM = '/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/jukie-drm-' +
+	(hardwareAACAvailable() ? 'webos3' : 'webos2');
 // jukie-drm has no way to receive credentials per-invocation - it only ever reads this
 // static file (working dir first, then next to the binary; both are this same directory
 // when we spawn it, since child_process.spawn inherits our cwd by default). The app's
@@ -68,6 +90,100 @@ var SECRETS_FILE = '/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.serv
 // is the basis for offline play.
 var CACHE_DIR = '/media/internal/.jukie/cache';
 function songFile(songId) { return CACHE_DIR + '/' + songId + '.m4a'; }
+
+// PulseAudio auth from inside the service jail.
+//
+// This service runs jailed as an unprivileged uid (5393 on this device). Its ONLY
+// possible audio path is PulseAudio's unix socket: the jail's /dev contains just
+// console/log/logdir/nduid/null/shm/urandom - no `snd` node at all - so alsasink
+// is not an option, no matter what the jail conf's do_snd flag suggests.
+//
+// pulseaudio here runs per-user (not --system), so the live config is
+// /etc/pulse/default.pa, which loads module-native-protocol-unix with NO
+// auth-group and NO auth-anonymous => the daemon demands the shared cookie. That
+// cookie is ~pulse/.pulse-cookie = /var/run/pulse/.pulse-cookie. The jail bind-
+// mounts /var/run rw so the path IS reachable from in here; it's the file mode
+// (0600, owner pulse) that decides whether we can actually read it.
+//
+// Point every pulse client (gst's pulsesink, and pactl) at that cookie explicitly.
+// Without it the client can't authenticate, and because HOME is the app dir it
+// then tries to mint its OWN cookie there - which is what produced the confusing
+// "Home directory ... not ours" line. The visible symptom was NOT an error: gst
+// logged "pipeline doesn't want to preroll" and exited with status 0, which the
+// exit handler below correctly reads as a clean end-of-stream, so a track would
+// "finish" a few seconds after starting with no audio and nothing in the log
+// that looked like a failure. pactl failed identically, which is why volume
+// lookups reported "no sink-input found".
+var PULSE_COOKIE = '/var/run/pulse/.pulse-cookie';
+var PULSE_SERVER = 'unix:/var/run/pulse/native';
+
+// Different webOS product lines (TouchPad vs. Pre2/older phones) have shown DIFFERENT
+// pulse/jail setups - only override the client's pulse env if the specific cookie path
+// above actually exists and is readable HERE. Where it doesn't, leave the env untouched
+// so whatever default resolution already worked on that device keeps working (computed
+// once and cached; this can't change during the service's lifetime).
+var _pulseCookieUsable = null;
+function pulseCookieUsable() {
+	if (_pulseCookieUsable === null) {
+		try { _pulseCookieUsable = fs.statSync(PULSE_COOKIE).size > 0; }
+		catch (e) { _pulseCookieUsable = false; }
+	}
+	return _pulseCookieUsable;
+}
+
+// Our env plus the pulse pointers (if usable - see above), for spawning any pulse-facing
+// child.
+function pulseEnv() {
+	var e = {}, k;
+	for (k in process.env) {
+		if (Object.prototype.hasOwnProperty.call(process.env, k)) { e[k] = process.env[k]; }
+	}
+	if (pulseCookieUsable()) {
+		e.PULSE_COOKIE = PULSE_COOKIE;
+		e.PULSE_SERVER = PULSE_SERVER;
+	}
+	return e;
+}
+
+// Whether THIS device's jail can actually reach the hardware AAC codec - see
+// _playFile's big comment for the full story. TouchPad's jail can; a Pre2-class
+// jail runs under a uid not in group `luna` and gets EACCES on the DSP device.
+//
+// This used to be learned reactively: try hardware on the first real track, and
+// only fall back to software after watching it visibly fail. That worked, but it
+// meant every Pre2-class device paid for that discovery with an actual broken
+// playback attempt on a real song the user tapped - not acceptable, so this
+// probes for it once at service startup instead, before any track is ever
+// played, so the very first real playback already uses the pipeline that works.
+//
+// Actually opening (then immediately closing) the device node is the only fully
+// reliable way to answer this on a Node build this old: there's no fs.accessSync
+// here to ask the OS directly, and hand-rolling uid/gid/supplementary-group
+// arithmetic against stat's mode bits would still miss anything enforced beyond
+// plain POSIX permissions. It's cheap (one syscall pair) and side-effect-free
+// (opening this device doesn't itself start any audio operation), so there's no
+// real cost to doing it unconditionally at load time rather than lazily.
+function hardwareAACAvailable() {
+	var fd;
+	try { fd = fs.openSync('/dev/DspBridge', 'r+'); }
+	catch (e) { return false; }
+	try { fs.closeSync(fd); } catch (e2) {}
+	return true;
+}
+
+// A spawn() failure for jukie-drm specifically means "the file isn't executable". Checked
+// two different ways because this old Node build (0.4-era) does NOT behave like modern
+// Node here - confirmed live on a real Pre2 (2026-07-31): spawn() does not emit an
+// 'error' event with .code 'EACCES' for a non-executable file the way current Node does;
+// instead the child "starts", then exits with code 127 and stderr
+// "execvp(): Permission denied\n" (a shell-style exec failure, not a JS-level spawn
+// error). So this checks BOTH an EACCES-style Error/.code (in case some other spawn path
+// or Node build DOES report it that way) AND the execvp/"denied" stderr text actually
+// observed - call it with either the spawn error object or the raw stderr buffer.
+function isDrmPermissionError(x) {
+	var s = '' + x;
+	return !!((x && x.code === 'EACCES') || /EACCES/i.test(s) || (/execvp/i.test(s) && /denied/i.test(s)));
+}
 
 // ---------------------------------------------------------------------------
 // Singleton player. All command assistants run in this one node process, so
@@ -88,8 +204,27 @@ var JukiePlayer = {
 	pausedAt: 0,     // seconds, ABSOLUTE track position captured at pause (or mid-seek)
 	duration: DEFAULT_PREVIEW_DURATION,
 	lastError: '',
+	// True when the MOST RECENT jukie-drm spawn failed specifically with EACCES - the
+	// binary's executable bit didn't survive packaging/install on this device (confirmed
+	// happening on a real Pre2 even with fix-ipk-exec.py's package-level chmod stamp; see
+	// post-install-jukie.ps1's own comment for the full story and the on-device fix).
+	// Surfaced in status() so the app can show an actionable message instead of a generic
+	// "playback error" - see isDrmPermissionError below.
+	permissionError: false,
 	playRetries: 0,  // count of automatic respawns for the CURRENT track (see _playFile)
 	MAX_PLAY_RETRIES: 2,
+	// Different webOS devices need DIFFERENT AAC decode paths (see _playFile's big
+	// comment): TouchPad's jail can reach the hardware DSP (decodebin -> PalmAudioDecoder
+	// works, and is lighter-weight than software decode), while a jailed Pre2 cannot
+	// (permission boundary) and needs the explicit software fallback. Rather than
+	// hardcode a device check (fragile, and other devices may differ again), we PROBE -
+	// but proactively, at load time (hardwareAACAvailable(), above), not by trying
+	// hardware on the user's first real track and learning from a visible failure.
+	// _playFile's exit handler still has a REACTIVE fallback for the same transition
+	// (sawError && !preferSoftwareAAC), kept as a safety net in case some device passes
+	// this open()-based probe but still fails for another reason - but the proactive
+	// check below means that path is not expected to actually fire on any known device.
+	preferSoftwareAAC: !hardwareAACAvailable(),
 	seekOffset: 0,   // seconds into the ORIGINAL track that the CURRENTLY PLAYING file
 	                 // actually starts at (0 normally; the seek target after seekTo() - the
 	                 // file gst plays post-seek is a fresh fragment that starts AT that
@@ -100,8 +235,12 @@ var JukiePlayer = {
 	                 // is no reachable API to set the real system volume from here)
 
 	log: function (msg) {
-		if (typeof console !== 'undefined' && console.log) {
-			console.log('[JukiePlayer] ' + msg);
+		// console.error, not console.log: confirmed on-device (this session) that
+		// console.log from this service never reaches /var/log/messages, even for
+		// calls proven to succeed by their actual returned data - only error-level
+		// calls surface, same as the WebKit app side.
+		if (typeof console !== 'undefined' && console.error) {
+			console.error('[JukiePlayer] ' + msg);
 		}
 	},
 
@@ -121,7 +260,7 @@ var JukiePlayer = {
 	// un-suspend resumes from the same spot. It's a GLOBAL toggle on the output sink,
 	// so we must un-suspend whenever playback is torn down/replaced (see _kill).
 	_suspendSink: function (yes) {
-		try { cp.spawn(PACTL, ['suspend-sink', SINK, yes ? '1' : '0']); }
+		try { cp.spawn(PACTL, ['suspend-sink', SINK, yes ? '1' : '0'], { env: pulseEnv() }); }
 		catch (e) { this.log('suspend-sink ' + yes + ' failed: ' + e); }
 	},
 
@@ -166,7 +305,7 @@ var JukiePlayer = {
 		var pid = this.child.pid;
 		var myGen = this.gen;
 		if (retriesLeft === undefined) { retriesLeft = 5; }
-		var list = cp.spawn(PACTL, ['list', 'sink-inputs']);
+		var list = cp.spawn(PACTL, ['list', 'sink-inputs'], { env: pulseEnv() });
 		var out = '';
 		if (list.stdout) { list.stdout.on('data', function (d) { out += d; }); }
 		list.on('exit', function () {
@@ -180,7 +319,7 @@ var JukiePlayer = {
 				}
 				return;
 			}
-			try { cp.spawn(PACTL, ['set-sink-input-volume', idx, String(self._volRaw(self.volume))]); }
+			try { cp.spawn(PACTL, ['set-sink-input-volume', idx, String(self._volRaw(self.volume))], { env: pulseEnv() }); }
 			catch (e) { self.log('set-sink-input-volume failed: ' + e); }
 		});
 	},
@@ -255,6 +394,7 @@ var JukiePlayer = {
 		this._kill();
 		this.state = 'playing';   // optimistic: UI shows "playing" during the brief fetch
 		this.lastError = '';
+		this.permissionError = false; // a fresh attempt might not hit it even if the last one did
 		this.pausedAt = 0;
 		this.startTime = 0;       // position stays 0 until the file actually starts playing
 		this.buffering = true;    // true while fetching (before gst starts)
@@ -288,7 +428,11 @@ var JukiePlayer = {
 		var outbuf = '', errbuf = '';
 		if (dl.stdout) { dl.stdout.on('data', function (d) { outbuf += d; }); }
 		if (dl.stderr) { dl.stderr.on('data', function (d) { errbuf += d; self.log('drm: ' + d); }); }
-		dl.on('error', function (e) { if (myGen !== self.gen) { return; } self._fail('jukie-drm spawn error: ' + e); });
+		dl.on('error', function (e) {
+			if (myGen !== self.gen) { return; }
+			if (isDrmPermissionError(e)) { self.permissionError = true; }
+			self._fail('jukie-drm spawn error: ' + e);
+		});
 		dl.on('exit', function (code, sig) {
 			if (myGen !== self.gen) { return; } // a newer track took over
 			self.dl = null;
@@ -296,12 +440,60 @@ var JukiePlayer = {
 			var res = null;
 			try { res = JSON.parse(outbuf); } catch (e) {}
 			if (code !== 0 || !res || !res.ok) {
+				if (isDrmPermissionError(errbuf)) { self.permissionError = true; }
 				self._fail('jukie-drm failed: ' + (res && res.error ? res.error : ('exit ' + code + ' ' + errbuf)));
 				return;
 			}
 			if (res.durationMs) { self.duration = res.durationMs / 1000; }
 			self.mediaFile = res.path || self.mediaFile;
 			self._playFile();
+		});
+	},
+
+	// apiGet: proxy one Apple Music REST API request through jukie-drm.
+	//
+	// Why this is here at all: the webOS 2.x in-app browser CANNOT reach Apple.
+	// Its TLS stack is too old to complete a handshake with Apple's servers -
+	// verified on-device with a probe matrix: plain https:// to other hosts
+	// returns 200, but every Apple host fails with status=0, exactly like the
+	// device's system curl (OpenSSL 0.9.8k) does. That's a platform limit with no
+	// JS-side fix, so the app can't call the API itself. jukie-drm carries its own
+	// modern TLS stack and an embedded CA bundle, so it proxies the request here.
+	// (webOS 3.x / TouchPad has a newer WebKit and doesn't need this - the Enyo
+	// app still calls the API directly there.)
+	//
+	// done(result) receives {returnValue:true, json} or {returnValue:false, error}.
+	apiGet: function (path, done) {
+		var self = this;
+		if (!path) { done({returnValue: false, error: 'apiGet: path required'}); return; }
+		this.log('api: ' + path);
+		var p = cp.spawn(DRM, ['-api', path]);
+		var outbuf = '', errbuf = '';
+		if (p.stdout) { p.stdout.on('data', function (d) { outbuf += d; }); }
+		if (p.stderr) { p.stderr.on('data', function (d) { errbuf += d; }); }
+		p.on('error', function (e) {
+			if (isDrmPermissionError(e)) { self.permissionError = true; }
+			done({returnValue: false, error: 'jukie-drm spawn error: ' + e, permissionError: isDrmPermissionError(e)});
+		});
+		p.on('exit', function (code) {
+			var json = null;
+			try { json = JSON.parse(outbuf); } catch (e) {}
+			if (code !== 0) {
+				// jukie-drm prints Apple's own error JSON even on a non-2xx, which is
+				// far more useful to surface than a bare exit code - pass it along.
+				self.log('api failed: ' + errbuf);
+				if (isDrmPermissionError(errbuf)) { self.permissionError = true; }
+				done({
+					returnValue: false, error: (errbuf || ('exit ' + code)).replace(/\s+$/, ''), json: json,
+					permissionError: isDrmPermissionError(errbuf)
+				});
+				return;
+			}
+			if (!json) {
+				done({returnValue: false, error: 'apiGet: could not parse response'});
+				return;
+			}
+			done({returnValue: true, json: json});
 		});
 	},
 
@@ -346,13 +538,41 @@ var JukiePlayer = {
 		// buffer-time caps how much audio PulseAudio buffers ahead of gst. Without it,
 		// gst (reading a local file) races ahead and fills seconds of pulse buffer, so a
 		// SIGSTOP pause keeps playing that buffer. ~250ms keeps pause near-instant.
-		var args = ['filesrc', 'location=' + playFile,
-		            '!', 'decodebin',
-		            '!', 'audioconvert',
-		            '!', 'pulsesink', 'buffer-time=250000'];
+		//
+		// Decode path: HARDWARE (decodebin, auto-selecting the device's AAC decoder) is
+		// tried first - this is the original, lighter-weight path that TouchPad's jail can
+		// actually use. Only after that's been observed to fail on THIS device (see the
+		// exit handler below) do we switch to the explicit SOFTWARE path.
+		//
+		// The software path is needed on devices (confirmed: Pre2) whose jail can't reach
+		// the hardware AAC codec: decodebin there auto-selects PalmAudioDecoder, an OpenMAX
+		// wrapper around the TI hardware AAC codec on the DSP, which needs /dev/DspBridge -
+		// `crw-rw---- root luna`. A service jailed under an unprivileged uid NOT in group
+		// `luna` can't open it:
+		//   DSP Manager Open : Err Num = 80008008
+		//   OpenMAX error 0x80001001 (OMX_ErrorUndefined) configuring AAC codec
+		//   ERROR: pipeline doesn't want to preroll.
+		// (This is exactly why playback "worked from a root shell but never from the app"
+		// on that device - root can open the DSP, the jailed service cannot. It's a
+		// permission boundary, not a codec or file problem.) ffdec_aac is a pure-userspace
+		// decoder needing no device node; jukie-drm always hands us raw ADTS, so aacparse
+		// framing it directly is enough (no demuxer at all) once we're on this path.
+		//
+		// NB: do not add audioresample to EITHER pipeline - it doesn't exist on these
+		// devices; streams play at their native rate.
+		var args = this.preferSoftwareAAC ?
+			['filesrc', 'location=' + playFile,
+			 '!', 'aacparse',
+			 '!', 'ffdec_aac',
+			 '!', 'audioconvert',
+			 '!', 'pulsesink', 'buffer-time=250000'] :
+			['filesrc', 'location=' + playFile,
+			 '!', 'decodebin',
+			 '!', 'audioconvert',
+			 '!', 'pulsesink', 'buffer-time=250000'];
 
-		this.log('spawn: ' + GST + ' ' + args.join(' '));
-		this.child = cp.spawn(GST, args);
+		this.log('spawn (' + (this.preferSoftwareAAC ? 'software' : 'hardware') + '): ' + GST + ' ' + args.join(' '));
+		this.child = cp.spawn(GST, args, { env: pulseEnv() });
 		this.startTime = Date.now();   // re-anchor position clock to actual playback start
 		this.pausedAt = 0;
 		this.buffering = false;
@@ -365,8 +585,20 @@ var JukiePlayer = {
 			setTimeout(function () { if (applyGen === self.gen) { self._applyVolume(); } }, 300);
 		})(this.gen);
 
+		// gst-launch exits with status 0 even when the pipeline never actually ran
+		// (e.g. "ERROR: pipeline doesn't want to preroll." when a sink can't be
+		// opened). Taken at face value that looks exactly like a clean end-of-track,
+		// so a totally failed playback silently reported itself as "finished" with
+		// nothing error-shaped anywhere. Watch stderr for gst's own ERROR lines and
+		// remember them, so the exit handler can tell "played to the end" apart from
+		// "never started".
+		var sawError = false;
 		if (this.child.stderr) {
-			this.child.stderr.on('data', function (d) { self.log('gst stderr: ' + d); });
+			this.child.stderr.on('data', function (d) {
+				var s = '' + d;
+				if (s.indexOf('ERROR:') !== -1) { sawError = true; }
+				self.log('gst stderr: ' + s);
+			});
 		}
 
 		this.child.on('error', function (e) {
@@ -390,15 +622,40 @@ var JukiePlayer = {
 			// still climbing (see JukieAudioService.js history). Detect an exit that's
 			// much too early for the track's real duration and respawn instead.
 			var elapsed = (Date.now() - self.startTime) / 1000;
+
+			// SAFETY NET, not the primary mechanism any more: preferSoftwareAAC starts
+			// out already correct for this device (hardwareAACAvailable() decided it at
+			// load time, before any track was ever played). This only fires if hardware
+			// looked reachable at startup but still failed for some other reason - learn
+			// to prefer software from now on, and retry THIS SAME file immediately on the
+			// software pipeline instead of surfacing an error. One-time transition: once
+			// preferSoftwareAAC is true this branch can never fire again, so a
+			// software-path failure falls through to the normal error handling below
+			// rather than looping.
+			if (sawError && !self.preferSoftwareAAC) {
+				self.log('hardware decode failed after ' + elapsed.toFixed(2) + 's - switching to software AAC decode for this device');
+				self.preferSoftwareAAC = true;
+				self._playFile(overrideFile);
+				return;
+			}
+
 			var tooEarly = elapsed < 2 && elapsed < (self.duration - 1);
 			if (tooEarly && self.playRetries < self.MAX_PLAY_RETRIES) {
 				self.playRetries++;
 				self.log('gst died after ' + elapsed.toFixed(2) + 's (retry ' + self.playRetries + '/' + self.MAX_PLAY_RETRIES + ')');
-				self._playFile();
+				self._playFile(overrideFile);
 				return;
 			}
 
 			// If we were still "playing", the process ended on its own (EOS) or died.
+			// A gst-reported ERROR means the pipeline failed rather than reached EOS,
+			// regardless of the exit status being 0 - surface that as a real error so
+			// the UI says so instead of quietly claiming the track finished.
+			if (sawError) {
+				self.state = 'error';
+				self.lastError = 'gst pipeline error (see service log); played ' + elapsed.toFixed(1) + 's of ' + self.duration + 's';
+				return;
+			}
 			self.state = (code === 0) ? 'ended' : 'error';
 			if (code !== 0) { self.lastError = 'gst exit code ' + code; }
 		});
@@ -459,27 +716,34 @@ var JukiePlayer = {
 	_runSeek: function (target, wasPaused) {
 		var self = this;
 		var myGen = this.gen;
-		// -ss BEFORE -i = fast input-side seek; -acodec copy = stream copy, no re-encode.
-		// (This device's ffmpeg is an ancient 2011 build - libavformat 52.x - that predates
-		// the modern unified "-c" shorthand; confirmed via a live device test that it fails
-		// with "Unrecognized option 'c'". Audio-only input, so -acodec copy is all we need.)
-		// -f mp4: this ffmpeg build's --enable-muxer list only has mp4/mov/3gp/3g2/amr (no
-		// adts muxer at all) - confirmed via a live device test ("Requested output format
-		// 'adts' is not a suitable output format"). The source is already MP4/M4A, so mp4
-		// output matches it exactly - gst's decodebin/qtdemux handles a trailing moov atom
-		// (the default non-faststart layout) fine for straight playback.
-		var args = ['-y', '-ss', String(target), '-i', this.mediaFile, '-acodec', 'copy', '-f', 'mp4', SEEK_FILE];
-		this.log('ffmpeg seek: ' + FFMPEG + ' ' + args.join(' '));
-		var dl = cp.spawn(FFMPEG, args);
+		// Seeking is a plain byte-offset cut, because what we play is raw ADTS AAC
+		// (jukie-drm remuxes to it - see internal/remux). Every ADTS frame carries its
+		// own sync word and header, and aacparse resynchronises at the next 0xFFF
+		// boundary, so landing mid-frame costs at most one frame (~23ms) and needs no
+		// container rewrite at all. Bitrate is effectively constant, so scaling the
+		// offset by target/duration lands accurately.
+		//
+		// (ffmpeg is deliberately NOT used here any more: this build has no ADTS muxer
+		// at all - confirmed live, "Requested output format 'adts' is not a suitable
+		// output format" - so the best it could emit was MP4, which _playFile's
+		// software pipeline intentionally no longer demuxes.)
+		var size = 0;
+		try { size = fs.statSync(this.mediaFile).size; } catch (e) {}
+		if (!size || !this.duration) { this._fail('seek: unknown file size or duration'); return; }
+		var BS = 4096;
+		var skip = Math.floor((size * (target / this.duration)) / BS);
+		var args = ['if=' + this.mediaFile, 'of=' + SEEK_FILE, 'bs=' + BS, 'skip=' + skip];
+		this.log('dd seek: ' + DD + ' ' + args.join(' '));
+		var dl = cp.spawn(DD, args);
 		this.dl = dl;
 
 		var errbuf = '';
 		if (dl.stderr) { dl.stderr.on('data', function (d) { errbuf += d; }); }
-		dl.on('error', function (e) { if (myGen !== self.gen) { return; } self._fail('ffmpeg seek spawn error: ' + e); });
+		dl.on('error', function (e) { if (myGen !== self.gen) { return; } self._fail('dd seek spawn error: ' + e); });
 		dl.on('exit', function (code, sig) {
 			if (myGen !== self.gen) { return; } // a newer play/seek/stop superseded this
 			self.dl = null;
-			if (code !== 0) { self._fail('ffmpeg seek failed: exit ' + code + ' ' + errbuf); return; }
+			if (code !== 0) { self._fail('dd seek failed: exit ' + code + ' ' + errbuf); return; }
 			self.seeking = false;
 			self._playFile(SEEK_FILE);
 			if (wasPaused) {
@@ -604,7 +868,8 @@ var JukiePlayer = {
 			volume: this.volume,
 			url: this.url,
 			songId: this.songId,
-			error: this.lastError
+			error: this.lastError,
+			permissionError: !!this.permissionError
 		};
 	}
 };
@@ -680,4 +945,27 @@ SetCredentialsCommandAssistant.prototype.run = function (future) {
 	var args = readArgs(this, future);
 	future.result = JukiePlayer.setCredentials(args);
 	return future;
+};
+
+// Async assistant: the result is filled in from the spawn callback rather than
+// synchronously here, so the future stays pending until jukie-drm exits.
+//
+// CRITICAL: do NOT `return future` here (unlike every synchronous assistant above).
+// The dispatcher (mojoservice's controller_service.js) does
+// `command.future.now(assistant, assistant.run)`, and Future._docall treats any
+// returned value with a `.then` method as an inner future to nest via
+// `this.nest(v)`. Returning `future` itself means nesting the future inside
+// itself - since its result isn't set yet, Future.nest() registers the future's
+// own completion callback ON ITSELF, a self-referential wait that never resolves
+// (confirmed on-device: apiGet hung indefinitely, while every other command here,
+// which sets future.result BEFORE returning future, works fine - by the time
+// THEIR nest() check runs, _result.isset is already true, so it takes nest()'s
+// other, non-self-referential branch instead). Returning nothing here skips that
+// whole nest/setResult branch, and the async future.result assignment below
+// resolves the SAME future the dispatcher already attached its own reply
+// listener to, exactly as intended.
+var ApiGetCommandAssistant = function () {};
+ApiGetCommandAssistant.prototype.run = function (future) {
+	var args = readArgs(this, future);
+	JukiePlayer.apiGet(args.path, function (res) { future.result = res; });
 };

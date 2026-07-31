@@ -1,0 +1,30 @@
+{
+	"title": "Jukie",
+	"type": "web",
+	"main": "index.html",
+	"vendor": "achunt",
+	"version": "1.0.0",
+	"id": "com.achunt.jukie",
+	"keywords": ["Apple Music", "Music", "Audio", "Songs"],
+	"icon": "icon.png",
+	"splashicon": "icon-256x256.png",
+	"theme": "palm-dark",
+	"noWindow": true,
+	"dockMode": true,
+	"touchstoneMode": "enabled",
+	"universalSearch": {
+		"dbsearch": {
+			"displayName": "Your Library",
+			"url": "com.achunt.jukie",
+			"launchParam": "libItemId",
+			"launchParamDbField": "_id",
+			"displayFields": ["name", "artistName"],
+			"dbQuery": {
+				"from": "com.achunt.jukie.libitem:1",
+				"where": [{"prop": "sortName", "op": "?", "val": "", "collate": "primary"}],
+				"orderBy": "sortName",
+				"limit": 20
+			}
+		}
+	}
+}

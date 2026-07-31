@@ -1,0 +1,55 @@
+<div class="palm-scene palm-dark palm-hasheader">
+  <div class="palm-header left truncating-text">
+    <div class="palm-header-wrapper">
+      <div id="now-playing-button" class="jukie-nowplaying-btn" style="display:none" x-mojo-tap-highlight="momentary">
+        <span x-mojo-loc="">Now Playing</span>
+      </div>
+      <div class="truncating-text" x-mojo-loc="">Jukie</div>
+    </div>
+  </div>
+
+  <!-- .palm-group/.palm-group-title - same pattern already proven working on Preferences
+       (preferences-scene.html) - not the .palm-divider.labeled table tried first, which
+       squashed its label column down to a single visible character on-device. -->
+  <div class="palm-group jukie-group" style="margin-top:52px">
+    <div class="palm-group-title"><span id="library-status-label"></span></div>
+    <!-- .palm-list is a DIRECT child of .palm-group (id moved here, the old wrapper div
+         removed) so the framework's own ".palm-group > .palm-list" rule actually matches -
+         that rule is what pulls the list back into .palm-group's reserved 40/18/18/18
+         border-image space (margin: -14px -16px -17px -16px). With the extra wrapper div
+         in between, that selector never matched anything, leaving the full uncompensated
+         border-image inset as visible empty space around the rows - confirmed as exactly
+         the "too much padding" being reported. -->
+    <div id="option-list" class="palm-list">
+      <div class="palm-row single" id="songs" x-mojo-tap-highlight="momentary">
+        <div class="palm-row-wrapper"><div class="jukie-menu-title" x-mojo-loc="">Songs</div></div>
+      </div>
+      <div class="palm-row" id="albums" x-mojo-tap-highlight="momentary">
+        <div class="palm-row-wrapper"><div class="jukie-menu-title" x-mojo-loc="">Albums</div></div>
+      </div>
+      <div class="palm-row" id="artists" x-mojo-tap-highlight="momentary">
+        <div class="palm-row-wrapper"><div class="title left" x-mojo-loc="">Artists</div></div>
+      </div>
+      <div class="palm-row" id="playlists" x-mojo-tap-highlight="momentary">
+        <div class="palm-row-wrapper"><div class="jukie-menu-title" x-mojo-loc="">Playlists</div></div>
+      </div>
+      <div class="palm-row last" id="search" x-mojo-tap-highlight="momentary">
+        <div class="palm-row-wrapper"><div class="jukie-menu-title" x-mojo-loc="">Search Apple Music</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="empty-hint" class="jukie-empty" style="display:none">
+    <div class="jukie-empty-msg" x-mojo-loc="">Your library is empty.</div>
+    <div class="jukie-empty-sub" x-mojo-loc="">Add your Apple Music tokens in Preferences, then Refresh Library.</div>
+  </div>
+
+  <!-- Full-screen busy scrim shown while a library refresh runs. Same stock
+       palm-scrim + Spinner pattern Palm's own Music app uses while indexing. -->
+  <div id="syncing-div" style="display:none">
+    <div class="palm-scrim">
+      <div x-mojo-element="Spinner" id="sync-spinner"></div>
+      <div class="jukie-scrim-msg" id="sync-message" x-mojo-loc="">Refreshing library…</div>
+    </div>
+  </div>
+</div>

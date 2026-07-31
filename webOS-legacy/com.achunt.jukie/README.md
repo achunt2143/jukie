@@ -26,7 +26,7 @@ See [**FEATURES.md**](../FEATURES.md) for a screenshot tour of what it can do, o
 - A working volume slider — see the caveat below.
 - Offline track caching, with a Settings screen to manage it.
 - A self-contained in-app Help screen (there's no real way to plug into webOS's system
-  Help app as a 3rd-party app — see `source/helpView.js` for why).
+  Help app as a 3rd-party app — see `enyo/source/helpView.js` for why).
 
 ## What it is *not*
 
@@ -64,8 +64,8 @@ See [**FEATURES.md**](../FEATURES.md) for a screenshot tour of what it can do, o
   `media-user-token` cookie (or the `Music-User-Token` request header). Long-lived
   (months), so this is normally a one-time paste.
 
-Paste both into Settings once the app is running (see `source/settingsView.js`), or
-supply a build-time developer token via a git-ignored `source/dev-token.local.js` that
+Paste both into Settings once the app is running (see `enyo/source/settingsView.js`), or
+supply a build-time developer token via a git-ignored `enyo/source/dev-token.local.js` that
 sets `window.APPLE_MUSIC_DEVELOPER_TOKEN`.
 
 ## Building & deploying
@@ -91,20 +91,27 @@ palm-launch com.achunt.jukie
 
 ## Project structure
 
-- `appinfo.json` / `index.html` / `launch/MusicAppLauncher.js` — app manifest and entry point.
-- `source/app.js` — root `MusicPlayerApp` kind; wires PalmServices, managers, and panes.
-- `source/*.js` — view kinds: album art carousel, per-type list views (songs/albums/
+This package bundles **two** front-ends behind a device-detecting `index.html` switcher —
+an Enyo build for webOS 3.x (TouchPad) and a Mojo build for webOS 2.x (Pre2) — since Enyo
+never shipped on webOS 2.x. See [`CLAUDE.md`](CLAUDE.md) for how the switcher works. The
+structure below is the Enyo build, in `enyo/`; the Mojo build lives in `mojo/` with its own
+(Mojo-convention) layout — see [`mojo/CLAUDE.md`](mojo/CLAUDE.md).
+
+- `appinfo.json` / `index.html` — the one manifest and switcher for the whole package.
+- `enyo/index.html` / `enyo/launch/MusicAppLauncher.js` — Enyo entry point.
+- `enyo/source/app.js` — root `MusicPlayerApp` kind; wires PalmServices, managers, and panes.
+- `enyo/source/*.js` — view kinds: album art carousel, per-type list views (songs/albums/
   artists/genres/playlists), navigation panel, player controls, Settings, Help.
-- `controls/*.js` — reusable controls: list views, the A-Z `AlphaPicker`, search input,
+- `enyo/controls/*.js` — reusable controls: list views, the A-Z `AlphaPicker`, search input,
   media item menus.
-- `utility/*.js` — non-UI logic: media index, playback orchestration, playlist/dashboard
+- `enyo/utility/*.js` — non-UI logic: media index, playback orchestration, playlist/dashboard
   managers, the audio player facade, and `applemusicservice.js` (the client-side wrapper
   over the Apple Music REST API for catalog/search — distinct from the Luna
   *playback* service; see the note below).
-- `dashboard.html` / `dashboard/` — the Now Playing dashboard.
-- `spec/` — Jasmine unit specs mirroring `source/`, `controls/`, `utility/`.
+- `enyo/dashboard.html` / `enyo/dashboard/` — the Now Playing dashboard.
+- `enyo/spec/` — Jasmine unit specs mirroring `source/`, `controls/`, `utility/`.
 
-**Two senses of "Apple Music" in this codebase**: `utility/applemusicservice.js` is a
+**Two senses of "Apple Music" in this codebase**: `enyo/utility/applemusicservice.js` is a
 plain client-side Enyo component hitting Apple's REST API for catalog/search. Full-track
 *playback* (DRM, decoding, the actual audio pipeline) is an entirely separate Luna
 service — see `com.achunt.jukie.service`. Don't conflate the two.

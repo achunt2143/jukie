@@ -39,9 +39,59 @@ pipeline instead and exposes playback over the Luna bus.
 webOS jail whose `/dev` has `urandom` but **no `/dev/random`**. `gst souphttpsrc` over HTTPS
 uses gnutls/libgcrypt, which aborts there (`no entropy gathering module detected` → SIGABRT)
 before the TLS handshake. So `_spawn` first downloads the preview with `curl` (its OpenSSL
-seeds fine from `/dev/urandom`) to `/tmp/jukie-preview.m4a`, then `_playFile` plays it with
-`filesrc ! decodebin ! audioconvert ! pulsesink` — no TLS, no entropy needed. See memory
-`jail-no-dev-random-tls`. (Do not "simplify" this back to a single souphttpsrc pipeline.)
+seeds fine from `/dev/urandom`) to `/tmp/jukie-preview.m4a`, then `_playFile` plays it from
+disk — no TLS, no entropy needed. See memory `jail-no-dev-random-tls`. (Do not "simplify"
+this back to a single souphttpsrc pipeline.)
+
+**The decode path is ADAPTIVE - this service now targets more than one webOS device
+family, and they need OPPOSITE pipelines. Do not hardcode either one as "the" pipeline.**
+
+- **TouchPad** (webOS 3.x): the jail can reach the hardware AAC codec, so `decodebin`
+  (auto-selecting `PalmAudioDecoder`, the OpenMAX wrapper around the TI DSP) works fine and
+  is the lighter-weight path. This is the ORIGINAL, long-confirmed-working pipeline.
+- **Pre2** (webOS 2.x / older phones) - and possibly other older devices: the jail runs
+  under an unprivileged uid *not* in group `luna`, and `/dev/DspBridge` is
+  `crw-rw---- root luna`, so `decodebin`'s hardware path fails to open it
+  (`DSP Manager Open : Err Num = 80008008` → `OpenMAX error 0x80001001` → `pipeline
+  doesn't want to preroll`) - a permission boundary, not a codec or file problem. It needs
+  the explicit software path instead: `filesrc ! aacparse ! ffdec_aac ! audioconvert !
+  pulsesink` (`aacparse`+`ffdec_aac` decode raw ADTS in pure userspace, no device node).
+
+**Do NOT hardcode a device check to pick between these** (fragile - a third device could
+differ yet again). Instead `JukiePlayer.preferSoftwareAAC` is decided by
+`hardwareAACAvailable()` - a PROACTIVE probe run once at service load, before any track is
+ever played: it actually opens (then immediately closes) `/dev/DspBridge` and returns
+whether that succeeded. If it can't be opened, `preferSoftwareAAC` starts out `true` and
+the very first real track already uses the software pipeline - no user-visible failure, no
+"first song doesn't play" tax on Pre2-class devices.
+
+**The same `hardwareAACAvailable()` probe also picks the jukie-drm binary now.** The
+package ships both `jukie-drm-webos3` (GOARM=7, standard toolchain) and `jukie-drm-webos2`
+(GOARM=5, patched toolchain - see `../jukie-drm/goruntime-patch/FINDINGS.md`), which are
+mutually incompatible - running the wrong one crashes on startup. `DRM` (near the top of
+`JukieAudioService.js`) is built from the exact same probe result as `preferSoftwareAAC`,
+not a second device check, so the AAC-decode-path decision and the jukie-drm-binary
+decision can never disagree with each other about which webOS generation this is.
+
+An earlier version of this learned reactively instead: try hardware on the first real
+track, and only flip to software after watching gst visibly fail (a real `ERROR:` line -
+watched for exactly because gst-launch exits 0 even on a failed preroll, which otherwise
+looks identical to a clean end-of-track). That worked, but cost every Pre2-class device one
+genuinely broken playback attempt on whatever song the user happened to tap first. The
+reactive path (`_playFile`'s exit handler, `if (sawError && !self.preferSoftwareAAC)`) is
+still there as a safety net - in case some device passes the open() probe but still fails
+for a different reason - but it's not expected to actually fire on any known device now;
+the proactive probe is what actually decides this in normal operation.
+
+This is exactly why an earlier session's fix for Pre2 (hardcoding the software pipeline
+unconditionally, no detection at all) broke TouchPad playback - always test/reason about
+BOTH device families before changing this, even though only one may be connected in a given
+session. Note `audioresample` genuinely does not exist on either device - never add it to
+either pipeline.
+
+**Seek is a byte-offset cut, not a container rewrite.** jukie-drm hands us raw ADTS AAC, so
+`_runSeek` just `dd`s from an offset scaled by `target/duration`; `aacparse` resyncs at the
+next frame. ffmpeg is deliberately not used (this build has no ADTS muxer at all).
 
 ## Package structure (webOS JS service convention)
 
@@ -49,7 +99,9 @@ Per the SDK "Creating a Hello World Service" guide, a service is one of **three*
 dirs, tied together by a package descriptor:
 
 ```
-com.achunt.jukie/          ← the app
+com.achunt.jukie/          ← the app (now a unified package bundling an Enyo/webOS3 build
+                              and a Mojo/webOS2 build behind a device-detecting switcher -
+                              see its own CLAUDE.md)
 com.achunt.jukie.service/  ← THIS service
 com.achunt.jukie.package/  ← packageinfo.json  ("app" + "services" arrays)
 ```

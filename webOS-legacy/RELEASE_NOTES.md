@@ -1,5 +1,61 @@
 # Jukie — Release Notes
 
+## v2.0 — webOS 2.x Support (Pre2, Veer) + a Unified Package
+
+Jukie now runs on **two generations of webOS from one install**: the original
+TouchPad/Pre3-era Enyo build, and a full new Mojo port for webOS 2.x devices (Pre2, Veer,
+and other older phones). One package, one app id, one deploy step — it figures out which
+UI to load and which native helper binary to use on its own, per device.
+
+### Core experience
+
+- **webOS 2.x devices are now fully supported** — a ground-up Mojo port with the same
+  core experience as the Enyo build: full library sync, Apple Music catalog search,
+  full-track playback, a real pause, offline caching, and Just Type integration. Extensively
+  tested on real Pre2 hardware.
+- **Touchstone dock support on Mojo** — a proper chrome-free Exhibition Mode presentation
+  (clock, full-bleed album art, transport controls) for devices with a dock, matching the
+  Enyo build's own dashboard-adjacent presentation.
+- **One install, either device** — you no longer need to know or pick which build you're
+  installing. The app detects the connected device at launch and loads the right UI
+  automatically; the playback service does the same for its native helper.
+- **A self-service fix for a known device quirk.** A small number of devices don't
+  preserve the playback helper's executable permission through install. Jukie now detects
+  this specific failure and tells you exactly what to run to fix it, instead of just
+  failing to play with no explanation.
+
+### Under the hood
+
+Making one package work correctly on two webOS generations, with two totally different UI
+frameworks (Enyo never shipped on webOS 2.x), turned up several real, device-specific
+problems that only showed up on physical hardware - not something a simulator or code
+review would have caught:
+
+- **Device-detecting bootstrap.** A tiny framework-less entry page reads the platform
+  version webOS itself reports and loads the Enyo or Mojo build accordingly - modeled on
+  a real precedent (a Palm-era app that solved the identical problem the same way).
+- **One native helper binary, chosen automatically.** The Widevine helper (`jukie-drm`)
+  needs a different build per webOS generation; the playback service now ships both and
+  picks the right one at load time using the same hardware probe it already used for
+  audio decode path selection, instead of a human choosing the right build ahead of time.
+- **A stage-naming collision, found and fixed on real Pre2 hardware.** The Mojo build's
+  own explicit UI stage happened to collide with the name the OS itself reserves for an
+  app's launch entry, once that entry became a shared switcher instead of the Mojo app
+  directly - a one-line rename, but only findable by actually launching on-device and
+  reading the crash.
+- **A silent packaging bug that could drop half an install without any error.** The
+  tool that fixes up the helper binary's executable permission was (invisibly)
+  producing a package format this era's installer can't fully read - it would silently
+  stop partway through extracting the package, on some devices, while still reporting a
+  successful install. Found by manually re-running the installer's own underlying command
+  and reading what it actually said. Fixed at the source.
+
+### Known limitations (in addition to the ones below, carried over from v1.0)
+
+- The Mojo (webOS 2.x) build doesn't yet have the Enyo build's persistent
+  dashboard/notification mini-player - full playback control still works from Now Playing
+  and Exhibition Mode.
+
 ## v1.0 — Initial Release
 
 Jukie is an unofficial Apple Music client for legacy Palm/HP webOS (TouchPad and Pre 3,

@@ -1,0 +1,16 @@
+--- "C:/Program Files/Go/src/internal/runtime/syscall/linux/defs_linux_arm.go"	2026-05-29 15:26:40.000000000 -0400
++++ C:/Users/achun/sdk/go1.26-pre2/src/internal/runtime/syscall/linux/defs_linux_arm.go	2026-07-28 15:48:32.658508000 -0400
+@@ -9,10 +9,13 @@
+ 	SYS_FCNTL         = 55
+ 	SYS_MPROTECT      = 125
+ 	SYS_PRCTL         = 172
++	SYS_EPOLL_CREATE  = 250
+ 	SYS_EPOLL_CTL     = 251
++	SYS_EPOLL_WAIT    = 252
+ 	SYS_EPOLL_PWAIT   = 346
+ 	SYS_EPOLL_CREATE1 = 357
+ 	SYS_EPOLL_PWAIT2  = 441
++	SYS_EVENTFD       = 351
+ 	SYS_EVENTFD2      = 356
+ 	SYS_OPENAT        = 322
+ 	SYS_PREAD64       = 180

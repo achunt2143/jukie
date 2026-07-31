@@ -1,0 +1,61 @@
+<div class="palm-scene palm-dark palm-hasheader">
+  <div class="palm-header left truncating-text">
+    <div class="palm-header-wrapper">
+      <div class="truncating-text" x-mojo-loc="">Preferences</div>
+    </div>
+  </div>
+
+  <div class="palm-group jukie-group" style="margin-top:52px">
+    <div class="palm-group-title"><span x-mojo-loc="">Apple Music</span></div>
+    <div class="palm-list">
+      <div class="palm-row single">
+        <div class="palm-row-wrapper">
+          <div class="jukie-field-label" x-mojo-loc="">Developer Token</div>
+          <div id="devToken" x-mojo-element="TextField" class="jukie-field"></div>
+        </div>
+      </div>
+      <div class="palm-row">
+        <div class="palm-row-wrapper">
+          <div class="jukie-field-label" x-mojo-loc="">Music User Token</div>
+          <div id="musicToken" x-mojo-element="TextField" class="jukie-field"></div>
+        </div>
+      </div>
+      <div class="palm-row last">
+        <div class="palm-row-wrapper">
+          <div class="jukie-field-label" x-mojo-loc="">Storefront</div>
+          <div id="storefront" x-mojo-element="ListSelector" class="jukie-selector"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="palm-group jukie-group">
+    <div class="palm-group-title"><span x-mojo-loc="">Search</span></div>
+    <div class="palm-list">
+      <div class="palm-row single last">
+        <div class="palm-row-wrapper">
+          <div class="jukie-field-label" x-mojo-loc="">Results per search</div>
+          <div id="searchLimit" x-mojo-element="ListSelector" class="jukie-selector"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="palm-group jukie-group">
+    <div class="palm-group-title"><span x-mojo-loc="">Cache</span></div>
+    <div class="palm-list">
+      <div class="palm-row single last">
+        <div class="palm-row-wrapper">
+          <div id="cacheToggle" x-mojo-element="ToggleButton"></div>
+          <div class="title left" x-mojo-loc="">Cache downloaded tracks</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="jukie-btn-row"><div id="saveBtn" x-mojo-element="Button"></div></div>
+  <div class="jukie-btn-row"><div id="refreshBtn" x-mojo-element="Button"></div></div>
+  <div class="jukie-btn-row"><div id="clearCacheBtn" x-mojo-element="Button"></div></div>
+
+  <div id="prefs-status" class="jukie-status"></div>
+</div>

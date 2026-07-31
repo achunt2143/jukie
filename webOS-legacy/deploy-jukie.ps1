@@ -1,67 +1,84 @@
-# Deploy Jukie app + service to the connected TouchPad in one shot.
+# Deploy Jukie to whichever webOS device is connected - one script, one package, works on
+# either a TouchPad (webOS 3.x) or a Pre2/older phone (webOS 2.x).
 #
-# Why this script exists (things `palm-install` does NOT do on a real device):
-#   1. It drops the service files but does NOT register the JS service on the LS2
-#      bus -> "Service does not exist". We must create the role/service files under
-#      /var/palm/ls2 and `ls-control scan-services`.
-#   2. Those LS2 files get wiped on every reinstall, so they must be re-created each time.
-#   3. An already-running JS service keeps serving OLD code until it is killed; we kill
-#      it so the next bus call reloads the new JukieAudioService.js.
+# Why this is one script now: com.achunt.jukie is a single unified package. Its
+# index.html is a framework-less switcher that detects the connected device
+# (PalmSystem.deviceInfo.platformVersionMajor) and loads the Enyo or Mojo build
+# accordingly, and com.achunt.jukie.service's JukieAudioService.js picks the matching
+# jukie-drm binary the same way. There's no more "human has to know which device this is
+# and run the matching script" step - this replaces the old deploy-jukie.ps1
+# (Enyo/TouchPad-only) + deploy-jukie-mojo.ps1 (Mojo/webOS2-only) split, which also used
+# to fight over a single shared jukie-drm binary slot (2026-07-29 incident: a leftover
+# webOS2 build got deployed to a TouchPad because whichever script ran last won). Both
+# binaries are now built and shipped together, so that failure mode is gone entirely.
+#
+# What palm-install alone does NOT do, that this script still has to handle:
+#   1. jukie-drm's executable bit - Windows/NTFS has no exec bit for palm-package to
+#      copy, so every file lands in a Windows-built .ipk as 0644. fix-ipk-exec.py stamps
+#      0755 onto whichever jukie-drm-webos2/-webos3 binaries got bundled, directly inside
+#      the built .ipk, before install - so the installed files are already executable and
+#      nothing needs fixing on-device (on-device chmod never worked reliably on
+#      TouchPad's jail anyway).
+#   2. LS2 bus registration - palm-install drops the service files but never registers
+#      them on the bus, and the registration files under /var/palm/ls2 are wiped on every
+#      reinstall. post-install-jukie.ps1 (re)creates them and restarts the service so new
+#      code loads.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File deploy-jukie.ps1
-#         add  -NoPackage  to ONLY re-register + restart the bus (no code update).
-#         NOTE: any change to app or service CODE needs a full run (repackage); the
-#         jail won't accept direct file pushes, so -NoPackage reinstalls the stale ipk.
+#         add  -NoPackage   to skip the rebuild/repackage and just reinstall + reregister
+#              whatever .ipk is already sitting here (matches the old scripts' behavior).
+#         add  -SkipWebos2  to skip the webOS2/Pre2 jukie-drm cross-build (e.g. the
+#              patched toolchain isn't set up on this machine) - webOS3/TouchPad playback
+#              is unaffected either way; only webOS2-device full-track playback needs it.
+#              A missing/failed webOS2 build is a WARN, not a hard failure, either way.
 
-param([switch]$NoPackage)
+param(
+    [switch]$NoPackage,
+    [switch]$SkipWebos2
+)
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $svc = 'com.achunt.jukie.service'
 
 if (-not $NoPackage) {
+    Write-Host "==> Building jukie-drm (webOS3/TouchPad, GOARM=7)..." -ForegroundColor Cyan
+    Push-Location jukie-drm
+    & powershell -ExecutionPolicy Bypass -File build.ps1 jukie-drm -Target webos3
+    $webos3Exit = $LASTEXITCODE
+    Pop-Location
+    if ($webos3Exit -ne 0) { throw "jukie-drm webOS3 build failed" }
+    Copy-Item -Force 'jukie-drm\build\jukie-drm-webos3' "$svc\jukie-drm-webos3"
+    Write-Host "staged jukie-drm-webos3 (webOS3/TouchPad build) into the service dir" -ForegroundColor Cyan
+
+    if (-not $SkipWebos2) {
+        Write-Host "==> Building jukie-drm (webOS2/Pre2, GOARM=5, patched toolchain)..." -ForegroundColor Cyan
+        Push-Location jukie-drm
+        & powershell -ExecutionPolicy Bypass -File build.ps1 jukie-drm -Target webos2
+        $webos2Exit = $LASTEXITCODE
+        Pop-Location
+        if ($webos2Exit -ne 0) {
+            Write-Host "WARN: jukie-drm webOS2 build failed - continuing without it. webOS2 devices won't get full-track playback until it's built (see jukie-drm/goruntime-patch/FINDINGS.md)." -ForegroundColor Yellow
+        } else {
+            Copy-Item -Force 'jukie-drm\build\jukie-drm-webos2' "$svc\jukie-drm-webos2"
+            Write-Host "staged jukie-drm-webos2 (webOS2/Pre2 build) into the service dir" -ForegroundColor Cyan
+        }
+    }
+
     Remove-Item -Force 'com.achunt.jukie_*_all.ipk' -ErrorAction SilentlyContinue
     & palm-package.bat com.achunt.jukie com.achunt.jukie.service com.achunt.jukie.package
+
+    $drmBins = @('jukie-drm-webos3', 'jukie-drm-webos2') | Where-Object { Test-Path "$svc\$_" }
+    if ($drmBins.Count -gt 0) {
+        $ipkForFix = Get-ChildItem 'com.achunt.jukie_*_all.ipk' | Select-Object -First 1
+        & python fix-ipk-exec.py $ipkForFix.Name @drmBins
+        if ($LASTEXITCODE -ne 0) { throw "fix-ipk-exec.py failed" }
+    }
 }
+
 $ipk = Get-ChildItem 'com.achunt.jukie_*_all.ipk' | Select-Object -First 1
 & palm-install.bat $ipk.Name
 
-# Device-side: (re)register the service on the LS2 bus, rescan, and kill any stale
-# running instance so the new code loads on the next call.
-$deviceScript = @'
-
-SVC=com.achunt.jukie.service
-DIR=/media/cryptofs/apps/usr/palm/services/$SVC
-
-cat > /var/palm/ls2/services/pub/$SVC <<EOF
-[D-BUS Service]
-Name=$SVC
-Exec=/usr/bin/run-js-service -n $DIR
-EOF
-cp /var/palm/ls2/services/pub/$SVC /var/palm/ls2/services/prv/$SVC
-
-cat > /var/palm/ls2/roles/pub/$SVC.json <<'JSON'
-{ "role": { "exeName":"js", "type":"regular", "allowedNames":["com.achunt.jukie.service"] },
-  "permissions": [ { "service":"com.achunt.jukie.service", "inbound":["*"], "outbound":["*"] } ] }
-JSON
-sed 's/"outbound":\["\*"\]/"outbound":[]/' /var/palm/ls2/roles/pub/$SVC.json > /var/palm/ls2/roles/prv/$SVC.json
-
-# palm-install already lands files as rwxrwxrwx, and the cryptofs jail mount rejects
-# chmod anyway, so we just confirm the helper is present (don't fail if chmod is a no-op).
-ls -l /media/cryptofs/apps/usr/palm/services/$SVC/jukie-drm 2>/dev/null || echo "WARN: jukie-drm not deployed"
-
-# IMPORTANT: kill any stale instance BEFORE scanning. If we scan first, the hub
-# registers the live pid, then we kill it, and every later call routes to a dead
-# process and hangs. Kill -> then scan so the hub has a clean slate.
-PID=`ps ax | grep $SVC.js | grep -v grep | awk '{print $1}'`
-[ -n "$PID" ] && kill -9 $PID && echo "killed stale pid $PID" || echo "no stale instance"
-# also reap any orphaned playback processes from a previous run
-for p in `ps ax | grep gst-launch | grep -v grep | awk '{print $1}'`; do kill -9 $p; done
-
-ls-control scan-services >/dev/null 2>&1
-echo "registered $SVC on the bus (will start fresh on first call)"
-echo "---EXIT---"; exit
-'@
-$deviceScript | & novacom.exe -t open tty://
+& powershell -ExecutionPolicy Bypass -File post-install-jukie.ps1
 
 Write-Host "`nDone. Launch with: palm-launch com.achunt.jukie" -ForegroundColor Green
