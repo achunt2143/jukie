@@ -27,7 +27,8 @@ enyo.kind({
 				{name: "itemMedia", kind: "draggableSong", layoutKind: "HFlexLayout", align: "center", className: "song", onclick: "onclick_listMedia", components: [
 					{kind: "Control", name: "songPlaying", className: "column album_artist_Blueicon", showing: true},
 					{name: "songTrack", className: "column number"},
-					{name: "songTitle", flex: 1, className: "column title"}
+					{name: "songTitle", flex: 1, className: "column title"},
+					{name: "songOffline", kind: "Control", className: "column offlineBadge", onclick: "onclick_offlineBadge"}
 				]}
 			]}
 		]},
@@ -117,8 +118,9 @@ enyo.kind({
 				this.updateUISongInfo(objSong);
 				this.$.songTrack.setContent(this._trackNumber(objSong, intIndex));
 				this.setPlayingStyles(this._trackId(objSong), this.$.itemMedia, this._strListQuery + this.strSortMode);
+				this.paintOfflineRow(objSong, this.$.itemMedia, this.$.songOffline);
 				if (intIndex === 0) {
-					this.$.albumName.setContent(objSong.album || (this.objCurr && this.objCurr.name) || "");
+					JukieEmoji.setContent(this.$.albumName, objSong.album || (this.objCurr && this.objCurr.name) || "");
 					if (this.arSongs.length !== 1) {
 						this.$.albumCounts.setContent(this.local_tracks_Templ.evaluate({num: this.arSongs.length}));
 					} else {

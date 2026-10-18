@@ -24,6 +24,7 @@ SearchAssistant.prototype.TYPES = {
 SearchAssistant.prototype.TYPE_ORDER = ["artists", "songs", "albums"];
 
 SearchAssistant.prototype.setup = function () {
+	Jukie.setupBack(this.controller);
 	this.searchType = "songs";
 
 	this.fieldModel = { value: "" };
@@ -100,6 +101,12 @@ SearchAssistant.prototype.doSearch = function () {
 	var self = this;
 	var term = (this.fieldModel.value || "").replace(/^\s+|\s+$/g, "");
 	if (!term) { return; }
+	if (!Jukie.online) {
+		this.setStatus("You're offline. Searching Apple Music needs an internet connection.");
+		var offBtn = this.controller.get("searchBtn");
+		if (offBtn && offBtn.mojo) { offBtn.mojo.deactivate(); }
+		return;
+	}
 	var type = this.searchType;
 	var limit = (Jukie.prefs && Jukie.prefs.searchResultLimit) || 5;
 	this.setStatus("Searching…");
@@ -111,8 +118,8 @@ SearchAssistant.prototype.doSearch = function () {
 		var rows = self._results.map(function (r, i) {
 			return {
 				// Mojo's #{...} substitution escapes for us; escaping here double-encodes.
-				primary: (type === "artists" ? r.name : r.title) || "",
-				secondary: type === "songs" ? (r.artist || "") : (type === "albums" ? (r.artist || "") : ""),
+				primary: JukieEmoji.text((type === "artists" ? r.name : r.title) || ""),
+				secondary: JukieEmoji.text(type === "songs" ? (r.artist || "") : (type === "albums" ? (r.artist || "") : "")),
 				thumb: Jukie.artUrl(r.artUrl, 80),
 				_idx: i
 			};

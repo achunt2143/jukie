@@ -15,6 +15,8 @@
 var SongsAssistant = function (args) {
 	this.args = args || {};
 	this.title = this.args.title || "Songs";
+	// "Saved Offline": swipe a row to remove it from the device (see deleteRecord).
+	this.swipeToDelete = !!this.args.offline;
 	if (this.args.artistName) {
 		// Artist detail: group by album instead of alphabet - fetchRows below sorts by
 		// album name (then disc/track number) so consecutive rows share a group.
@@ -22,7 +24,7 @@ var SongsAssistant = function (args) {
 			labelCallback: function (item) { return item.album || ""; },
 			template: "list/group-header"
 		};
-	} else if (!this.args.tracks && !this.args.albumId && !this.args.albumName) {
+	} else if (!this.args.tracks && !this.args.albumId && !this.args.albumName && !this.args.offline) {
 		// Whole-library Songs list (no args at all): alphabetical, same as
 		// Albums/Artists - Jukie.library.getSongs() already returns rows sorted by
 		// sortName, so consecutive rows' first letters are already grouped correctly.
@@ -37,8 +39,29 @@ SongsAssistant.prototype = new JukieListAssistant();
 
 SongsAssistant.prototype.emptyText = "No songs here.";
 
+// Rows show (and repaint on changes to) offline availability - see JukieListAssistant.
+SongsAssistant.prototype.usesOfflineState = true;
+
 SongsAssistant.prototype.fetchRows = function () {
 	var self = this;
+	if (this.args.offline) {
+		// "Saved Offline": the songs the user chose to keep, straight from the service's
+		// manifest (so it also lists saved songs that aren't in the synced library).
+		this.emptyText = "No songs saved for offline play yet. Press and hold a song, then choose Save for offline.";
+		return new Promise(function (resolve) {
+			Jukie.playback.listOffline(function (res) {
+				var items = (res && res.items) || [];
+				items.sort(function (a, b) {
+					var x = (a.title || "").toLowerCase(), y = (b.title || "").toLowerCase();
+					return x < y ? -1 : (x > y ? 1 : 0);
+				});
+				resolve(items.map(function (it) {
+					// title/artist/album come back from the service in emoji-marker form: show what this device can draw.
+					return { catalogId: it.id || "", libraryId: it.libraryId || "", title: JukieEmoji.text(it.title || ""), artist: JukieEmoji.text(it.artist || ""), album: JukieEmoji.text(it.album || ""), artUrl: it.artUrl || "", durationMs: 0 };
+				}));
+			});
+		});
+	}
 	if (this.args.tracks) {
 		return Promise.resolve((this.args.tracks || []).map(function (t) { return self._fromTrackRef(t); }));
 	}
@@ -98,16 +121,52 @@ SongsAssistant.prototype.toRow = function (rec) {
 	// Escaping first produced double-encoded rows ("Tiesto &amp; Tate McRae").
 	// album: only read by the artist-detail dividers' labelCallback (see the
 	// constructor) - unused by media-row.html's own template, harmless elsewhere.
-	return { primary: rec.title || "", secondary: rec.artist || "", thumb: this.thumbUrl(rec.artUrl, 80), album: rec.album || "" };
+	var decor = Jukie.offlineDecor(rec.catalogId);
+	return {
+		primary: JukieEmoji.text(rec.title || ""), secondary: JukieEmoji.text(rec.artist || ""), thumb: this.thumbUrl(rec.artUrl, 80), album: rec.album || "",
+		rowClass: decor.rowClass, badgeClass: decor.badgeClass
+	};
+};
+
+SongsAssistant.prototype.alert = function (title, message) {
+	this.controller.showAlertDialog({ title: title, message: message, choices: [{ label: "OK", value: "ok" }] });
+};
+
+// Press and hold a song: save it for offline play, or remove it from there.
+SongsAssistant.prototype.holdActionsFor = function (rec) {
+	if (!rec.catalogId) { return null; }
+	if (Jukie.savedIds[rec.catalogId]) { return [{ label: "Remove from offline", command: "unsave" }]; }
+	return [{ label: "Save for offline", command: "save" }];
+};
+
+SongsAssistant.prototype.onHoldChoice = function (command, rec) {
+	var self = this;
+	if (command === "save") {
+		// Downloading needs a connection; a song already cached on the device doesn't.
+		if (!Jukie.online && !Jukie.offlineIds[rec.catalogId]) {
+			this.alert("You're offline", "Connect to the internet to save this song for offline play.");
+			return;
+		}
+		Jukie.saveOffline(rec);
+	} else if (command === "unsave") {
+		Jukie.removeOffline(rec, function () { if (self.args.offline) { self.load(); } });
+	}
+};
+
+// Swiped away in the Saved Offline list: unpin it and delete its audio. The row is already
+// gone locally; reload afterwards so the list reflects what the service actually kept.
+SongsAssistant.prototype.deleteRecord = function (rec) {
+	var self = this;
+	Jukie.removeOffline(rec, function () { self.load(); });
 };
 
 SongsAssistant.prototype.handleTap = function (rec, index) {
 	if (!rec.catalogId) {
-		this.controller.showAlertDialog({
-			title: "Can't play this track",
-			message: "This item has no catalog id, so full-track playback isn't available for it.",
-			choices: [{ label: "OK", value: "ok" }]
-		});
+		this.alert("Can't play this track", "This item has no catalog id, so full-track playback isn't available for it.");
+		return;
+	}
+	if (!Jukie.isPlayable(rec)) {
+		this.alert("Not available offline", "This song isn't saved on this device. Connect to the internet to play it, or press and hold it to save it for offline play.");
 		return;
 	}
 	// Whatever list this is (whole library, an album, an artist, a playlist) becomes the

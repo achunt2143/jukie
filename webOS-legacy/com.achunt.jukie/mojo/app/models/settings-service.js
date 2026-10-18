@@ -24,6 +24,7 @@ SettingsService.prototype = {
 			musicUserToken: "",
 			storefront: "us",
 			cacheEnabled: true,
+			cacheLimitMB: 512,
 			streamQuality: "high",
 			searchResultLimit: 5
 		};

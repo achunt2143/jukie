@@ -238,8 +238,8 @@ enyo.kind({
 			if (this.arAlbums !== undefined && this.arAlbums[intIndex] !== undefined) {
 				objAlbum = this.arAlbums[intIndex];
 				this.log(objAlbum.name);
-				this.$.albumName.setContent(objAlbum.name);
-				this.$.albumArtist.setContent(objAlbum.artist);
+				JukieEmoji.setContent(this.$.albumName, objAlbum.name);
+				JukieEmoji.setContent(this.$.albumArtist, objAlbum.artist);
 				if (objAlbum.name.length > 0) {
 					// _alphaLabel is precomputed once in _buildAlphaJumps - not recalculated
 					// here (this runs on every row recycle during scrolling).

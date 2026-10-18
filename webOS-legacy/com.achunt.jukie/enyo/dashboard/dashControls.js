@@ -45,8 +45,8 @@ enyo.kind({
 	{
 			
 			this.log();
-			this.$.lblSongTitle.setContent(objTrackInfo.strTrackTitle);
-			this.$.lblArtistName.setContent(objTrackInfo.strTrackArtist);
+			JukieEmoji.setContent(this.$.lblSongTitle, objTrackInfo.strTrackTitle);
+			JukieEmoji.setContent(this.$.lblArtistName, objTrackInfo.strTrackArtist);
 	
 		
 	},

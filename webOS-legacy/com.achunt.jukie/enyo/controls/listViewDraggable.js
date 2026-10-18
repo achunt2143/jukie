@@ -38,7 +38,7 @@ enyo.kind({
 enyo.kind({
 	name: "listViewDraggable",
 	kind: "listView",
-	events: {onAddToPlaylist: "", onItemDrag: "", onItemShowAvatar: "", onItemShowAvatarIcon: ""},
+	events: {onAddToPlaylist: "", onItemDrag: "", onItemShowAvatar: "", onItemShowAvatarIcon: "", onToggleOffline: ""},
 	intJumpRowOffset: 0,
 	boolDragHold: false,
 	boolDragItem: false,
@@ -71,6 +71,47 @@ enyo.kind({
 		} else {
 			itemMedia.removeClass("playingHere");
 			itemMedia.removeClass("playing");
+		}
+	},
+
+	// ---- saved-for-offline support for song rows (see utility/offline.js) ----
+
+	// Called from listSetupRow, which runs on every row recycle while scrolling - so this is
+	// only cheap lookups on JukieOffline's plain objects. `badge` is the row's tappable
+	// download glyph (named songOffline in the song-row lists).
+	paintOfflineRow: function (objSong, itemMedia, badge) {
+		var st = JukieOffline.state(objSong && objSong.id);
+		if (badge) {
+			badge.addRemoveClass("saved", st === "saved");
+			badge.addRemoveClass("pending", st === "pending");
+			badge.addRemoveClass("cached", st === "cached");
+		}
+		itemMedia.addRemoveClass("unavailable", JukieOffline.isUnavailable(objSong && objSong.id));
+	},
+
+	// Tapping the badge saves/removes the song; the app does the work (onToggleOffline).
+	// Returns true so the click doesn't also bubble to the row and start playback.
+	onclick_offlineBadge: function (sender, event) {
+		var objSong = this.arSongs && this.arSongs[this.getDragIndex(sender, event)];
+		if (objSong && objSong.id) {
+			this.doToggleOffline(objSong);
+		}
+		return true;
+	},
+
+	// Offline and not on the device -> tell the user instead of starting a doomed fetch.
+	blockIfUnavailable: function (objSong) {
+		if (objSong && JukieOffline.isUnavailable(objSong.id)) {
+			enyo.windows.addBannerMessage($L("Not available offline"), "{}", "images/notification-small.png");
+			return true;
+		}
+		return false;
+	},
+
+	// Repaint the visible rows in place (scroll position kept) after an offline-state change.
+	repaintOfflineRows: function () {
+		if (this.$.listMedia && this.$.listMedia.refresh) {
+			this.$.listMedia.refresh();
 		}
 	},
 

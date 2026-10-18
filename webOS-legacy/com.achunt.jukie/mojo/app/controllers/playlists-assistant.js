@@ -17,7 +17,7 @@ PlaylistsAssistant.prototype.fetchRows = function () {
 PlaylistsAssistant.prototype.toRow = function (rec) {
 	var n = (rec.tracks && rec.tracks.length) || 0;
 	// Mojo's #{...} substitution escapes for us; escaping here too double-encodes.
-	return { primary: rec.name || "", secondary: n + (n === 1 ? " song" : " songs"), thumb: this.thumbUrl(rec.artworkUrl, 80) };
+	return { primary: JukieEmoji.text(rec.name || ""), secondary: n + (n === 1 ? " song" : " songs"), thumb: this.thumbUrl(rec.artworkUrl, 80) };
 };
 
 PlaylistsAssistant.prototype.handleTap = function (rec) {

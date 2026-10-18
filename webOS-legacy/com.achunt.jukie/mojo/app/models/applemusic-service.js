@@ -146,7 +146,9 @@ AppleMusicService.prototype = {
 		return new Promise(function (resolve, reject) {
 			new Mojo.Service.Request("palm://com.achunt.jukie.service/", {
 				method: "apiGet",
-				parameters: { path: url },
+				// emoji: only when this device can draw them (Lunacy); a stock Pre2 cannot, so the
+				// helper keeps stripping them, as it always has.
+				parameters: { path: url, emoji: JukieEmoji.canRender() },
 				onSuccess: function (response) {
 					if (response && response.returnValue !== false && response.json) {
 						resolve(response.json);

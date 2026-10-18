@@ -22,6 +22,7 @@ enyo.kind({
 			musicUserToken: "",
 			storefront: "us",
 			cacheEnabled: true,
+			cacheLimitMB: 512,
 			streamQuality: "high"
 		};
 	},

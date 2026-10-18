@@ -45,8 +45,9 @@ enyo.kind({
 				window.clearInterval(this.intervalCheckTrackTime);
 			}
 			
-			var strSongInfo = "<b>" + objTrackInfo.strTrackTitle  + "</b> - " + objTrackInfo.strTrackArtist + ", "+ objTrackInfo.strTrackAlbum;
-			
+			var strSongInfo = "<b>" + JukieEmoji.html(objTrackInfo.strTrackTitle) + "</b> - " + JukieEmoji.html(objTrackInfo.strTrackArtist) + ", " + JukieEmoji.html(objTrackInfo.strTrackAlbum);
+
+			this.$.lblArtistName.allowHtml = true;
 			this.$.lblArtistName.setContent(strSongInfo);
 
 			

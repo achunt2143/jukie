@@ -241,7 +241,7 @@ enyo.kind({
 		{
 			this.$.songTrack.setContent("-");
 		}
-		this.$.songTitle.setContent(objSong.title);
+		JukieEmoji.setContent(this.$.songTitle, objSong.title);
 	},
 
 	resetMusicListHeaders: function ()
@@ -259,6 +259,10 @@ enyo.kind({
 	onclick_listMedia: function (sender, event)
 	{
 		var intClickIndex = event.rowIndex;
+		if (this.blockIfUnavailable(this.arSongs && this.arSongs[intClickIndex]))
+		{
+			return;
+		}
 		var objSetPlaybackList = {
 			arSetPlaybackList: this.arSongs,
 			intStartTrackIndex: intClickIndex,

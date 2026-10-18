@@ -1,9 +1,10 @@
-<div class="palm-row jukie-row" x-mojo-tap-highlight="momentary">
+<div class="palm-row jukie-row #{rowClass}" data-idx="#{_idx}" x-mojo-tap-highlight="momentary">
   <div class="jukie-media-row">
     <div class="jukie-thumb" style="background-image:url('#{thumb}')"></div>
     <div class="jukie-media-text">
       <div class="jukie-media-primary truncating-text">#{primary}</div>
       <div class="jukie-media-secondary truncating-text">#{secondary}</div>
     </div>
+    <div class="jukie-offline-badge #{badgeClass}"></div>
   </div>
 </div>

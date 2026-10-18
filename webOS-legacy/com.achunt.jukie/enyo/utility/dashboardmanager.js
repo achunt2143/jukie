@@ -69,7 +69,9 @@ enyo.kind(
 		if(!objTrackInfo.boolForced && !boolWindowActive && boolShowBanner)
 		{
 			var template = new enyo.g11n.Template($L("Playing #{trackTitle} by #{trackArtist}"));
-			var strBannerMsg = template.evaluate({trackTitle: objTrackInfo.strTrackTitle, trackArtist: objTrackInfo.strTrackArtist});
+			// The status-bar banner is drawn by LunaSysMgr (native Qt), which shows an astral emoji as
+				// two tofu boxes and which no page-level patch can reach - always send it plain text.
+				var strBannerMsg = template.evaluate({trackTitle: JukieEmoji.strip(objTrackInfo.strTrackTitle), trackArtist: JukieEmoji.strip(objTrackInfo.strTrackArtist)});
 			this.log("strBannerMsg: ", strBannerMsg);
 			enyo.windows.addBannerMessage(strBannerMsg, "{}", "images/notification-small.png");				
 		}

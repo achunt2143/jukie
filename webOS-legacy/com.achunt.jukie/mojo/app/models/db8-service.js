@@ -55,7 +55,9 @@ Db8Service.prototype = {
 
 	// put: store an array of objects (each must carry _kind). Returns {results:[{id,rev}]}.
 	put: function (objects) {
-		return this._call("put", { objects: objects });
+		// Emoji are stored as ASCII markers (JukieEmoji), the same as the Enyo build: a real one
+		// does not reliably survive a db8 write/read on webOS.
+		return this._call("put", { objects: JukieEmoji.encodeDeep(objects) });
 	},
 
 	// find: query is {from:"<kind>", where:[...], orderBy:"<index>", limit:N, page:"..."}.
@@ -69,7 +71,7 @@ Db8Service.prototype = {
 	},
 
 	merge: function (query, props) {
-		return this._call("merge", { query: query, props: props });
+		return this._call("merge", { query: query, props: JukieEmoji.encodeDeep(props) });
 	},
 
 	// Register a kind schema (idempotent - putKind updates if it exists).

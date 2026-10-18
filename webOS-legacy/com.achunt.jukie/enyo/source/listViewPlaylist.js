@@ -280,8 +280,8 @@ enyo.kind({
 			if (this.arSongs !== undefined && this.arSongs[intIndex] !== undefined) {
 				objSong = this.arSongs[intIndex];
 				this.$.songNumber.setContent(objSong.trackNumber || (intIndex + 1));
-				this.$.songTitle.setContent(objSong.title);
-				this.$.songArtist.setContent(objSong.artist);
+				JukieEmoji.setContent(this.$.songTitle, objSong.title);
+				JukieEmoji.setContent(this.$.songArtist, objSong.artist);
 				this.$.colDeleteItem.setShowing(this.boolEditMode);
 				this.$.itemMedia.addRemoveClass("deleted", !!objSong.boolDeleted);
 				this.handlePlayingSong(objSong, intIndex);

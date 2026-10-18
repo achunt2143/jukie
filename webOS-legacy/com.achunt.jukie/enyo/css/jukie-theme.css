@@ -95,6 +95,37 @@
 	font-weight: bold;
 }
 
+/* ---- Saved-for-offline badge at the end of each song row ----
+   The webOS download glyph from images/toaster-icon-downloads.png (32x32 frames stacked: the
+   grey arrow on top, the red one below), drawn at 24px so it fits the 26px row line. Always
+   shown, faintly, so it reads as a button; tapping it saves/removes the song for offline play
+   (listViewDraggable.js onclick_offlineBadge). State classes come from paintOfflineRow:
+     saved   - red arrow: kept on the device
+     pending - red arrow, dimmed: saved, still downloading (or the download failed)
+     cached  - grey arrow: not saved, but a copy is on the device so it plays offline */
+.view .song .column.offlineBadge {
+	position: relative;
+	width: 44px;
+	min-width: 44px;
+	padding: 0;
+}
+.view .song .column.offlineBadge:before {
+	content: "";
+	position: absolute;
+	left: 10px;
+	top: 1px;
+	width: 24px;
+	height: 24px;
+	background: url(../images/toaster-icon-downloads.png) no-repeat 0 0;
+	-webkit-background-size: 24px 48px;
+	opacity: 0.3;
+}
+.view .song .column.offlineBadge.cached:before { opacity: 1; }
+.view .song .column.offlineBadge.pending:before { background-position: 0 -24px; opacity: 0.5; }
+.view .song .column.offlineBadge.saved:before { background-position: 0 -24px; opacity: 1; }
+/* Offline and not on the device: still listed, but dimmed. */
+.view .song.unavailable .column { opacity: 0.35; }
+
 /* ---- Player control: fill the "blue bit" (slider-progress.png) with our own bar art ----
    NOTE: this was scoped to ".playerControl", a class that doesn't actually exist anywhere -
    kindPlayerControl's real root className is "controls" (see playerControl.js) - so this

@@ -24,6 +24,8 @@ import (
 	"github.com/achunt/jukie-drm/internal/apple"
 	"github.com/achunt/jukie-drm/internal/appleauth"
 	"github.com/achunt/jukie-drm/internal/certs"
+	"github.com/achunt/jukie-drm/internal/dnsfix"
+	"github.com/achunt/jukie-drm/internal/emojienc"
 	"github.com/achunt/jukie-drm/internal/remux"
 	widevine "github.com/iyear/gowidevine"
 	"google.golang.org/protobuf/proto"
@@ -52,12 +54,22 @@ func main() {
 	out := flag.String("o", "", "output path for the decrypted .m4a (default: <title>.m4a)")
 	jsonOut := flag.Bool("json", false, "print one JSON result line on stdout")
 	apiPath := flag.String("api", "", "authenticated GET against the Apple Music API (path or full URL); prints the raw JSON response")
+	emojiMode := flag.String("emoji", "", `with -api: "encode" keeps emoji as ASCII {{e:HEX}} markers instead of stripping them`)
 	flag.Parse()
+	if *emojiMode == "encode" {
+		// Same switch as the JUKIE_EMOJI environment variable (see apple.sanitizeBody); a flag
+		// because the service's jail did not reliably pass the variable to this process.
+		os.Setenv("JUKIE_EMOJI", "encode")
+	}
 
 	// Supply TLS roots from the embedded bundle: webOS devices ship no CA store,
 	// so without this every HTTPS request fails cert verification.
 	if err := certs.Install(); err != nil {
 		logf("warning: %v (HTTPS may fail)", err)
+	}
+	// Android has no /etc/resolv.conf (webOS does, so this is a no-op there).
+	if dnsfix.Install() {
+		logf("no /etc/resolv.conf - using fallback DNS servers")
 	}
 
 	// API-proxy mode. The webOS 2.x browser can't reach Apple over TLS at all, so
@@ -83,6 +95,11 @@ func main() {
 		logf("FAIL: %v", err)
 	}
 	if *jsonOut {
+		// The service parses this line and puts title/artist into Luna replies, which cannot
+		// carry astral characters (see package emojienc): send them as ASCII markers.
+		r.Title = emojienc.Encode(r.Title)
+		r.Artist = emojienc.Encode(r.Artist)
+		r.Error = emojienc.Encode(r.Error)
 		b, _ := json.Marshal(r)
 		fmt.Println(string(b))
 	}

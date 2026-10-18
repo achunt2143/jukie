@@ -104,6 +104,14 @@ body {
 .navigation .enyo-item.genres .icon {
 	background-position:0 -108px;
 }
+/* "Saved Offline": the red half of the download sprite, 24px, vertically centred */
+.navigation .enyo-item.saved .icon {
+	width:24px;
+	height:24px;
+	margin:0 10px 0 2px;
+	background:url(../images/toaster-icon-downloads.png) no-repeat 0 -24px;
+	-webkit-background-size:24px 48px;
+}
 .navigation .enyo-item.playlist .icon {
 	background-position:0 -144px;
 }

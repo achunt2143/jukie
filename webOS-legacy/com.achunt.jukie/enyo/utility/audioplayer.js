@@ -30,7 +30,17 @@ enyo.kind(
 		{name: "svcSeek", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "seek", onSuccess: "onStatus", onFailure: "onSvcFailure"},
 		{name: "svcSetVolume", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "setVolume", onSuccess: "onStatus", onFailure: "onSvcFailure"},
 		{name: "svcGetVolume", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "getVolume", onSuccess: "onGotVolume", onFailure: "onSvcFailure"},
-		{name: "svcSetCredentials", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "setCredentials", onSuccess: "onCredentialsSet", onFailure: "onCredentialsSet"}
+		{name: "svcSetCredentials", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "setCredentials", onSuccess: "onCredentialsSet", onFailure: "onCredentialsSet"},
+		// Cache size + saved-for-offline songs. All answer through request.callback (see
+		// onCallbackResult), same pattern as svcClearCache.
+		{name: "svcSetCacheLimit", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "setCacheLimit", onSuccess: "onCallbackResult", onFailure: "onCallbackResult"},
+		{name: "svcGetCacheInfo", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "getCacheInfo", onSuccess: "onCallbackResult", onFailure: "onCallbackResult"},
+		// Lunacy only: fetch + decrypt a track into the cache, no playback (see _waPlay).
+		{name: "svcPrepareSong", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "prepareSong", onSuccess: "onCallbackResult", onFailure: "onCallbackResult"},
+		{name: "svcListOffline", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "listOffline", onSuccess: "onCallbackResult", onFailure: "onCallbackResult"},
+		{name: "svcGetOfflineStatus", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "getOfflineStatus", onSuccess: "onCallbackResult", onFailure: "onCallbackResult"},
+		{name: "svcPinSong", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "pinSong", onSuccess: "onCallbackResult", onFailure: "onCallbackResult"},
+		{name: "svcUnpinSong", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "unpinSong", onSuccess: "onCallbackResult", onFailure: "onCallbackResult"}
 	],
 
 	_url: "",
@@ -57,7 +67,257 @@ enyo.kind(
 	destroy: function ()
 	{
 		this._stopPolling();
+		this._waStop();
 		this.inherited(arguments);
+	},
+
+	// ---- Lunacy: play through the page's own <audio> -----------------------------
+	// Lunacy (webOS on Android) has no gst-launch or PulseAudio, so the service can't play
+	// anything there. It only fetches (prepareSong: jukie-drm decrypts the track into the
+	// cache); this backend reads the cached raw-ADTS file and plays it with an <audio>
+	// element. Every state change goes through onStatus() as a synthesized service response,
+	// so kindPlayback and everything above it is unchanged. Port of the Mojo build's
+	// PlaybackService._wa* (mojo/app/models/playback-service.js - same design notes apply:
+	// raw ADTS has no length index, so JukieAdts indexes the frames and a seek hands the
+	// element a Blob that starts at the target frame).
+
+	CACHE_URL: "/media/internal/.jukie/cache/",
+
+	_webAudio: function ()
+	{
+		return JukieLunacy.isLunacy();
+	},
+
+	_waState: function ()
+	{
+		if (!this._wa)
+		{
+			this._wa = {
+				audio: null, token: 0, state: "idle", buffering: false, error: "", permissionError: false,
+				bytes: null, index: null, base: 0, durationSec: 0, blobUrl: "", volume: 1, switching: false,
+				songId: "", pendingSeek: 0
+			};
+		}
+		return this._wa;
+	},
+
+	// Push the current state through onStatus() as if the service had reported it.
+	_waStatus: function ()
+	{
+		var wa = this._waState();
+		var pos = wa.base + (wa.audio && wa.audio.src ? (wa.audio.currentTime || 0) : 0);
+		if (wa.durationSec > 0) { pos = Math.min(pos, wa.durationSec); }
+		this.onStatus(null, {
+			returnValue: true,
+			state: wa.state,
+			// "playing" even while buffering, like the service (the UI shows a spinner for that).
+			isPlaying: wa.state === "playing",
+			buffering: wa.buffering,
+			position: pos,
+			duration: wa.durationSec > 0 ? wa.durationSec : 30,
+			volume: Math.round(wa.volume * 100),
+			error: wa.error,
+			permissionError: wa.permissionError
+		});
+	},
+
+	_waFail: function (msg, permissionError)
+	{
+		var wa = this._waState();
+		wa.state = "error";
+		wa.buffering = false;
+		wa.error = msg || "playback error";
+		wa.permissionError = !!permissionError;
+		this._waDrop();
+		this._waStatus();
+	},
+
+	// Release the current media (element source + blob) without touching state.
+	_waDrop: function ()
+	{
+		var wa = this._waState();
+		if (wa.audio)
+		{
+			wa.switching = true;
+			try { wa.audio.pause(); wa.audio.removeAttribute("src"); wa.audio.load(); } catch (e) {}
+			wa.switching = false;
+		}
+		if (wa.blobUrl)
+		{
+			try { window.URL.revokeObjectURL(wa.blobUrl); } catch (e2) {}
+			wa.blobUrl = "";
+		}
+	},
+
+	_waElement: function ()
+	{
+		var wa = this._waState();
+		if (wa.audio) { return wa.audio; }
+		var self = this, a = new window.Audio();
+		a.preload = "auto";
+		a.volume = wa.volume;
+		a.addEventListener("playing", function ()
+		{
+			wa.state = "playing"; wa.buffering = false; self._waStatus();
+		}, false);
+		a.addEventListener("waiting", function ()
+		{
+			if (!wa.switching && wa.state === "playing") { wa.buffering = true; self._waStatus(); }
+		}, false);
+		a.addEventListener("pause", function ()
+		{
+			// Swapping the source for a seek also pauses the element; only a real pause counts.
+			if (wa.switching || a.ended || wa.state !== "playing") { return; }
+			wa.state = "paused"; wa.buffering = false; self._waStatus();
+		}, false);
+		a.addEventListener("timeupdate", function ()
+		{
+			if (wa.state === "playing") { self._waStatus(); }
+		}, false);
+		a.addEventListener("ended", function ()
+		{
+			wa.state = "ended"; wa.buffering = false; self._waStatus();
+		}, false);
+		a.addEventListener("error", function ()
+		{
+			if (wa.switching || !a.src) { return; }
+			self._waFail("audio error " + (a.error ? a.error.code : "?"));
+		}, false);
+		wa.audio = a;
+		return a;
+	},
+
+	_waPlay: function ()
+	{
+		var self = this, wa = this._waState(), token = ++wa.token;
+		this._waDrop();
+		wa.state = "playing";      // optimistic, like the service: UI shows "loading" until audio starts
+		wa.buffering = true;
+		wa.error = "";
+		wa.permissionError = false;
+		wa.bytes = null; wa.index = null; wa.base = 0; wa.durationSec = 0;
+		this._waStatus();
+
+		if (!this._songId)
+		{ // a preview clip: a plain URL, no cache involved
+			var a = this._waElement();
+			wa.switching = true; a.src = this._url; wa.switching = false;
+			a.play();
+			return;
+		}
+		var offlineOnly = !!this._offlineOnly;
+		this._cacheCall("svcPrepareSong", {songId: this._songId, libraryId: this._libraryId, offlineOnly: offlineOnly}, function (r)
+		{
+			if (token !== wa.token) { return; } // skipped / stopped while fetching
+			if (!r || r.returnValue === false)
+			{
+				if (r && r.superseded) { return; }
+				self._waFail((r && r.error) || "could not fetch the track", r && r.permissionError);
+				return;
+			}
+			self._waLoad(token, r.durationMs);
+		});
+	},
+
+	// Read the cached file, index its frames, and start playing (from a seek made before play, if any).
+	_waLoad: function (token, durationMs)
+	{
+		var self = this, wa = this._waState();
+		var songId = this._songId;
+		var xhr = new window.XMLHttpRequest();
+		xhr.open("GET", this.CACHE_URL + encodeURIComponent(songId) + ".m4a", true);
+		xhr.responseType = "arraybuffer";
+		xhr.onload = function ()
+		{
+			if (token !== wa.token) { return; }
+			if (xhr.status !== 200 && xhr.status !== 0) { self._waFail("could not read the cached track (HTTP " + xhr.status + ")"); return; }
+			var bytes = new window.Uint8Array(xhr.response);
+			var index = JukieAdts.index(bytes, durationMs);
+			if (!index.offsets.length) { self._waFail("the cached track is not playable audio"); return; }
+			wa.bytes = bytes; wa.index = index; wa.durationSec = index.durationSec; wa.songId = songId;
+			var start = wa.pendingSeek || 0;
+			wa.pendingSeek = 0;
+			self._waStart(start, true);
+		};
+		xhr.onerror = function () { if (token === wa.token) { self._waFail("could not read the cached track"); } };
+		xhr.send();
+	},
+
+	// Point the <audio> at the audio from `seconds` on. autoplay: start it playing.
+	_waStart: function (seconds, autoplay)
+	{
+		var self = this, wa = this._waState();
+		if (!wa.bytes || !wa.index) { return; }
+		var frame = JukieAdts.frameAt(wa.index, seconds);
+		var blob = new window.Blob([wa.bytes.subarray(wa.index.offsets[frame])], {type: "audio/aac"});
+		var oldUrl = wa.blobUrl;
+		wa.blobUrl = window.URL.createObjectURL(blob);
+		wa.base = frame * wa.index.frameSec;
+		var a = this._waElement();
+		wa.switching = true;
+		a.src = wa.blobUrl;
+		wa.switching = false;
+		if (oldUrl) { try { window.URL.revokeObjectURL(oldUrl); } catch (e) {} }
+		if (autoplay)
+		{
+			var p = a.play();
+			if (p && p.catch)
+			{
+				p.catch(function (e)
+				{
+					// The browser can refuse audio that didn't start from a tap (the fetch finishes
+					// after the tap's own call stack). Fall back to "paused" so the play button
+					// works - that tap is a gesture. A real decode problem arrives through the
+					// element's error event instead.
+					if (e && e.name === "NotAllowedError" && wa.state === "playing")
+					{
+						wa.state = "paused"; wa.buffering = false; self._waStatus();
+					}
+				});
+			}
+		}
+		else
+		{
+			wa.buffering = false;
+			this._waStatus();
+		}
+	},
+
+	_waPause: function ()
+	{
+		var wa = this._waState();
+		if (!wa.audio || wa.state !== "playing") { return; }
+		wa.state = "paused"; wa.buffering = false;
+		wa.audio.pause();
+		this._waStatus();
+	},
+
+	_waResume: function ()
+	{
+		var wa = this._waState();
+		wa.state = "playing";
+		wa.audio.play();
+		this._waStatus();
+	},
+
+	_waStop: function ()
+	{
+		var wa = this._waState();
+		wa.token++;
+		this._waDrop();
+		wa.state = "idle"; wa.buffering = false; wa.error = ""; wa.base = 0; wa.songId = "";
+		this._waStatus();
+	},
+
+	_waSeek: function (seconds)
+	{
+		var wa = this._waState();
+		if (!wa.bytes)
+		{
+			wa.pendingSeek = seconds; // kindPlayback seeks right after load(), before play()
+			return;
+		}
+		this._waStart(seconds, wa.state === "playing");
 	},
 
 	// ---- commands from kindPlayback --------------------------------------
@@ -68,14 +328,38 @@ enyo.kind(
 		this._url = url || "";
 		this._songId = songId || "";
 		this._libraryId = libraryId || "";
+		this._waState().pendingSeek = 0;
 	},
 
 	play: function ()
 	{
+		var self = this;
 		this.log("play:", this._songId || this._url);
 		if (!this._songId && !this._url)
 		{
 			this.log("play called with no songId/url, skipping");
+			return;
+		}
+		// The very first play can beat Lunacy's boot-time probe; wait for its answer so we
+		// pick the right backend, then start.
+		if (JukieLunacy.state === undefined)
+		{
+			JukieLunacy.whenKnown(function () { self.play(); });
+			return;
+		}
+		if (this._webAudio())
+		{
+			// Same rule as the service: resume in place only if THIS exact track is the one
+			// currently paused; otherwise (new track, ended, failed) start it fresh.
+			var wa = this._waState();
+			if (wa.state === "paused" && this._songId && wa.songId === this._songId && wa.audio && wa.audio.src)
+			{
+				this._waResume();
+			}
+			else
+			{
+				this._waPlay();
+			}
 			return;
 		}
 		// Always send play with the loaded track; the service resumes in place only if
@@ -84,8 +368,10 @@ enyo.kind(
 		// song instead of starting the newly-loaded one.)
 		if (this._songId)
 		{
-			// Full-track playback via the Widevine helper (jukie-drm).
-			this.$.svcPlay.call({songId: this._songId, libraryId: this._libraryId});
+			// Full-track playback via the Widevine helper (jukie-drm). offlineOnly: with no
+			// network the service fails an uncached track at once ("not available offline")
+			// instead of waiting out jukie-drm's network timeouts.
+			this.$.svcPlay.call({songId: this._songId, libraryId: this._libraryId, offlineOnly: !!this._offlineOnly});
 		}
 		else
 		{
@@ -98,12 +384,14 @@ enyo.kind(
 	pause: function ()
 	{
 		this.log("pause");
+		if (this._webAudio()) { this._waPause(); return; }
 		this.$.svcPause.call({});
 	},
 
 	stop: function ()
 	{
 		this.log("stop");
+		if (this._webAudio()) { this._waStop(); return; }
 		this.$.svcStop.call({});
 		this._stopPolling();
 	},
@@ -124,12 +412,71 @@ enyo.kind(
 		if (request && request.callback) { request.callback(response); }
 	},
 
+	// ---- cache size + saved-for-offline songs -----------------------------
+	// Every callback gets the raw response ({returnValue:false,...} on failure), so callers
+	// must check returnValue.
+
+	// When true, play() tells the service not to bother fetching an uncached track.
+	setOfflineOnly: function (offlineOnly)
+	{
+		this._offlineOnly = !!offlineOnly;
+	},
+
+	_cacheCall: function (name, params, callback)
+	{
+		var req = this.$[name].call(params || {});
+		req.callback = callback;
+	},
+
+	onCallbackResult: function (sender, response, request)
+	{
+		if (request && request.callback) { request.callback(response || {returnValue: false}); }
+	},
+
+	setCacheLimit: function (mb, callback)
+	{
+		this._cacheCall("svcSetCacheLimit", {mb: mb}, callback);
+	},
+
+	// -> {limitMB, usedBytes, count, pinnedBytes, pinnedCount}
+	getCacheInfo: function (callback)
+	{
+		this._cacheCall("svcGetCacheInfo", {}, callback);
+	},
+
+	// -> {available:[ids], pinned:[ids], missing:[ids], items:[saved-song records]}
+	listOffline: function (callback)
+	{
+		this._cacheCall("svcListOffline", {}, callback);
+	},
+
+	// -> {active:id, queued:[ids], failed:[{id,error}]}
+	getOfflineStatus: function (callback)
+	{
+		this._cacheCall("svcGetOfflineStatus", {}, callback);
+	},
+
+	// item: a playlist/library item {id, libraryId, title, artist, album, artUrl}
+	pinSong: function (item, callback)
+	{
+		this._cacheCall("svcPinSong", {
+			songId: item.id, libraryId: item.libraryId || "", title: JukieEmoji.encode(item.title || ""), // emoji sent as ASCII markers: Luna replies from the service cannot carry real ones (see JukieEmoji)
+			artist: JukieEmoji.encode(item.artist || ""), album: JukieEmoji.encode(item.album || ""), artUrl: item.artUrl || ""
+		}, callback);
+	},
+
+	unpinSong: function (songId, callback)
+	{
+		this._cacheCall("svcUnpinSong", {songId: songId}, callback);
+	},
+
 	seekTo: function (seconds)
 	{
 		// Routed through the Luna service (ffmpeg cuts a fragment starting at this position,
 		// then plays it) - see JukieAudioService.js's seekTo/_runSeek for why gst-launch
 		// itself can't seek a live pipeline.
 		this.log("seekTo:", seconds);
+		if (this._webAudio()) { this._waSeek(seconds); return; }
 		this.$.svcSeek.call({seconds: seconds});
 	},
 
@@ -165,6 +512,13 @@ enyo.kind(
 	{
 		var pct = Math.round(Math.max(0, Math.min(1, fraction)) * 100);
 		this._status.volume = pct;
+		if (this._webAudio())
+		{
+			var wa = this._waState();
+			wa.volume = pct / 100;
+			if (wa.audio) { wa.audio.volume = wa.volume; }
+			return;
+		}
 		this._pendingVolume = pct;
 		var self = this;
 		if (this._volumeThrottleTimer) { return; }
@@ -184,6 +538,12 @@ enyo.kind(
 	// was last set to, rather than assuming the default.
 	getVolume: function (callback)
 	{
+		if (this._webAudio())
+		{
+			var v = this._waState().volume;
+			if (callback) { callback(v); return; }
+			return v;
+		}
 		if (callback)
 		{
 			var req = this.$.svcGetVolume.call({});

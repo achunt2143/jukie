@@ -65,10 +65,35 @@ var TMP_FILE = '/tmp/jukie-preview.m4a'; // /tmp is writable inside the jail
 var SEEK_FILE = '/tmp/jukie-seek.m4a'; // seek-fragment output, overwritten per seek
 var DEFAULT_PREVIEW_DURATION = 30; // Apple preview clips are ~30s; refined if known
 
+// Fire-and-forget spawn for helpers whose result nobody awaits (kill, pactl). A spawn of a
+// binary that doesn't exist emits an 'error' event, and with no listener that throws and
+// takes the whole service process down - pactl, for one, simply isn't there on Android
+// (Lunacy). Swallowing it here makes those helpers a quiet no-op instead.
+function spawnQuiet(cmd, args, opts) {
+	var p = cp.spawn(cmd, args, opts);
+	p.on('error', function () {});
+	return p;
+}
+
+// Astral characters (emoji and friends - anything needing a UTF-16 surrogate pair) cannot cross
+// the Luna bus through this service: the Node 0.4 / palmbus path swallows the reply outright on
+// a Pre2 and turns each half into a literal "?" on a TouchPad. So user text that passes through
+// here (a saved song's title/artist/album, a track's title/artist from jukie-drm) is carried as
+// the ASCII marker {{e:1F970}} (the code point in hex) and the app turns it back into the real
+// character, if that device can draw it, at render time (JukieEmoji.decode in the Enyo/Mojo
+// apps). Same marker as jukie-drm's emojienc package. Lone surrogates have no code point: dropped.
+function encodeAstral(s) {
+	if (typeof s !== 'string') { return s; }
+	return s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function (pair) {
+		var cp = ((pair.charCodeAt(0) - 0xD800) * 0x400) + (pair.charCodeAt(1) - 0xDC00) + 0x10000;
+		return '{{e:' + cp.toString(16).toUpperCase() + '}}';
+	}).replace(/[\uD800-\uDFFF]/g, '');
+}
+
 // jukie-drm: our static ARM helper that does the full-track Apple Music Widevine flow
 // (webPlayback -> license -> download -> decrypt) and writes a plain .m4a. It lives in
 // this service dir (so device.wvd + secrets.local.json sit next to it). Output goes to
-// a song-id-keyed path in /tmp, which doubles as a simple session cache.
+// a song-id-keyed file under CACHE_DIR (below), which is also the offline cache.
 //
 // The package ships BOTH webOS-version builds (see jukie-drm/build.ps1) so the one
 // package works on either device - which one actually gets exec'd is decided here, at
@@ -77,8 +102,16 @@ var DEFAULT_PREVIEW_DURATION = 30; // Apple preview clips are ~30s; refined if k
 // TouchPad/webOS3-class jail can reach the DSP, a webOS2-class jail (Pre2 and older)
 // cannot. Reusing that one probe for both decisions keeps this to a single source of
 // truth instead of a second device check that could drift out of sync with the first.
+//
+// A third build exists for Lunacy (webOS on Android) on a 64-bit phone: 64-bit-only chips
+// can't run either 32-bit ARM build. Lunacy's Node (12.x) reports process.arch === 'arm64'
+// there; the old webOS Node builds report nothing useful, so they never take that branch.
 var DRM = '/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/jukie-drm-' +
-	(hardwareAACAvailable() ? 'webos3' : 'webos2');
+	(process.arch === 'arm64' ? 'android-arm64' : (hardwareAACAvailable() ? 'webos3' : 'webos2'));
+// Lunacy's installer drops every file's executable bit, so make the helper executable
+// ourselves. Harmless where it can't apply: TouchPad's cryptofs mount ignores chmod, and
+// on a device where the binary is already executable this changes nothing.
+try { fs.chmodSync(DRM, parseInt('755', 8)); } catch (e) {}
 // jukie-drm has no way to receive credentials per-invocation - it only ever reads this
 // static file (working dir first, then next to the binary; both are this same directory
 // when we spawn it, since child_process.spawn inherits our cwd by default). The app's
@@ -88,7 +121,16 @@ var SECRETS_FILE = '/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.serv
 // Decrypted tracks are cached on the big persistent /media/internal partition (writable
 // from the jail), NOT /tmp (a 40MB RAM disk wiped on reboot). This survives reboots and
 // is the basis for offline play.
-var CACHE_DIR = '/media/internal/.jukie/cache';
+var JUKIE_DIR = '/media/internal/.jukie';
+var CACHE_DIR = JUKIE_DIR + '/cache';
+// Small JSON state next to the cache. Both live outside the app/service install dirs, so
+// they survive reinstalls (unlike db8 kinds). CONFIG_FILE: {cacheLimitMB, lastUsed:{id:ms}};
+// OFFLINE_FILE: {songs:{id:{...}}} - the tracks the user chose to keep for offline play.
+var CONFIG_FILE = JUKIE_DIR + '/config.json';
+var OFFLINE_FILE = JUKIE_DIR + '/offline.json';
+var DEFAULT_CACHE_MB = 512;
+var STALE_PART_MS = 10 * 60 * 1000; // an interrupted download's *.part older than this is garbage
+var DIR_MODE = parseInt('777', 8);
 function songFile(songId) { return CACHE_DIR + '/' + songId + '.m4a'; }
 
 // PulseAudio auth from inside the service jail.
@@ -186,6 +228,306 @@ function isDrmPermissionError(x) {
 }
 
 // ---------------------------------------------------------------------------
+// On-disk track cache: a size-limited LRU plus a "saved for offline" manifest.
+//
+// Files: CACHE_DIR/<songId>.m4a (really raw ADTS AAC) and its <songId>.m4a.json sidecar,
+// which jukie-drm writes. A track plays with NO network exactly when jukie-drm's own
+// offline short-circuit would take it (main.go cachedResult): non-empty file AND a
+// non-empty sidecar - that is what "valid" means here. Saved songs are never evicted.
+//
+// Recency for eviction is tracked in CONFIG_FILE (lastUsed), not file mtimes: a cache hit
+// never changes mtime, and this old Node's utimes() argument handling isn't trusted.
+// ---------------------------------------------------------------------------
+var JukieCache = {
+	_cfg: null,
+	_offline: null,
+
+	_ensureDirs: function () {
+		var dirs = [JUKIE_DIR, CACHE_DIR], i;
+		for (i = 0; i < dirs.length; i++) {
+			try { fs.statSync(dirs[i]); }
+			catch (e) { try { fs.mkdirSync(dirs[i], DIR_MODE); } catch (e2) {} }
+		}
+	},
+
+	_load: function (file, fallback) {
+		try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; }
+	},
+
+	// Write via tmp + rename so a crash mid-write can't leave a truncated file.
+	_save: function (file, obj) {
+		try {
+			this._ensureDirs();
+			fs.writeFileSync(file + '.tmp', JSON.stringify(obj));
+			fs.renameSync(file + '.tmp', file);
+			return true;
+		} catch (e) {
+			JukiePlayer.log('save ' + file + ' failed: ' + e);
+			return false;
+		}
+	},
+
+	config: function () {
+		if (!this._cfg) {
+			var c = this._load(CONFIG_FILE, {});
+			this._cfg = {
+				cacheLimitMB: (typeof c.cacheLimitMB === 'number' && c.cacheLimitMB >= 0) ? c.cacheLimitMB : DEFAULT_CACHE_MB,
+				lastUsed: c.lastUsed || {}
+			};
+		}
+		return this._cfg;
+	},
+
+	_saveConfig: function () { this._save(CONFIG_FILE, this.config()); },
+
+	limitBytes: function () { return this.config().cacheLimitMB * 1048576; },
+
+	// 0 is a valid limit: keep only the track being played (saved songs are exempt anyway).
+	setLimit: function (mb) {
+		mb = Number(mb);
+		if (!(mb >= 0)) { return false; } // NaN or negative
+		this.config().cacheLimitMB = Math.floor(mb);
+		this._saveConfig();
+		this.enforce(JukiePlayer.mediaFile);
+		return true;
+	},
+
+	touch: function (id) {
+		this.config().lastUsed[id] = Date.now();
+		this._saveConfig();
+	},
+
+	offline: function () {
+		if (!this._offline) {
+			var o = this._load(OFFLINE_FILE, {});
+			this._offline = { songs: o.songs || {} };
+		}
+		return this._offline;
+	},
+
+	isPinned: function (id) { return !!this.offline().songs[id]; },
+
+	isValid: function (id) {
+		var p = songFile(id);
+		try { return fs.statSync(p).size > 0 && fs.statSync(p + '.json').size > 0; }
+		catch (e) { return false; }
+	},
+
+	// Every cached track: {id, path, size, t (last used, ms), valid, pinned}.
+	entries: function () {
+		var out = [], names, i, lastUsed = this.config().lastUsed;
+		try { names = fs.readdirSync(CACHE_DIR); } catch (e) { return out; }
+		for (i = 0; i < names.length; i++) {
+			var n = names[i];
+			if (n.substr(n.length - 4) !== '.m4a') { continue; }
+			var id = n.substr(0, n.length - 4), p = CACHE_DIR + '/' + n, st, valid = false;
+			try { st = fs.statSync(p); } catch (e) { continue; }
+			try { valid = st.size > 0 && fs.statSync(p + '.json').size > 0; } catch (e2) {}
+			out.push({ id: id, path: p, size: st.size, t: lastUsed[id] || st.mtime.getTime(), valid: valid, pinned: this.isPinned(id) });
+		}
+		return out;
+	},
+
+	_remove: function (e) {
+		try { fs.unlinkSync(e.path); } catch (x) {}
+		try { fs.unlinkSync(e.path + '.json'); } catch (x2) {}
+		delete this.config().lastUsed[e.id];
+	},
+
+	// Evict least-recently-used unsaved tracks until the unsaved total fits the limit.
+	// `keepPath` (the track being played / about to play) is never evicted, even when it
+	// alone exceeds the limit. Also clears interrupted-download leftovers.
+	enforce: function (keepPath) {
+		try {
+			var limit = this.limitBytes(), es = this.entries(), i, used = 0, evictable = [], seen = {};
+			for (i = 0; i < es.length; i++) {
+				seen[es[i].id] = true;
+				if (es[i].pinned) { continue; }
+				used += es[i].size;
+				if (es[i].path !== keepPath) { evictable.push(es[i]); }
+			}
+			evictable.sort(function (a, b) { return a.t - b.t; }); // least recently used first
+			for (i = 0; i < evictable.length && used > limit; i++) {
+				this._remove(evictable[i]);
+				used -= evictable[i].size;
+				delete seen[evictable[i].id];
+			}
+			var lu = this.config().lastUsed, id;
+			for (id in lu) {
+				if (lu.hasOwnProperty(id) && !seen[id]) { delete lu[id]; }
+			}
+			this._saveConfig();
+			this._sweepOrphans();
+		} catch (e) { JukiePlayer.log('cache enforce failed: ' + e); }
+	},
+
+	// Interrupted downloads (*.part) and sidecars whose track is gone.
+	_sweepOrphans: function () {
+		var names, i, now = Date.now(), have = {};
+		try { names = fs.readdirSync(CACHE_DIR); } catch (e) { return; }
+		for (i = 0; i < names.length; i++) { have[names[i]] = true; }
+		for (i = 0; i < names.length; i++) {
+			var n = names[i], p = CACHE_DIR + '/' + n;
+			try {
+				if (n.substr(n.length - 5) === '.part') {
+					if (now - fs.statSync(p).mtime.getTime() > STALE_PART_MS) { fs.unlinkSync(p); }
+				} else if (n.substr(n.length - 9) === '.m4a.json' && !have[n.substr(0, n.length - 5)]) {
+					fs.unlinkSync(p);
+				}
+			} catch (e2) {}
+		}
+	},
+
+	info: function () {
+		var es = this.entries(), i, r = { returnValue: true, limitMB: this.config().cacheLimitMB,
+			usedBytes: 0, count: 0, pinnedBytes: 0, pinnedCount: 0 };
+		for (i = 0; i < es.length; i++) {
+			if (es[i].pinned) { r.pinnedBytes += es[i].size; r.pinnedCount++; }
+			else { r.usedBytes += es[i].size; r.count++; }
+		}
+		return r;
+	},
+
+	// available: playable with no network (cached + saved alike). pinned: the user's saved
+	// ids. missing: saved but not (yet) on disk - queued, or failed. items: saved-song
+	// metadata, so a "Saved Offline" view can list songs that aren't in the library.
+	list: function () {
+		var es = this.entries(), songs = this.offline().songs, available = [], have = {}, pinned = [], missing = [], items = [], i, id;
+		for (i = 0; i < es.length; i++) {
+			if (es[i].valid) { available.push(es[i].id); have[es[i].id] = true; }
+		}
+		for (id in songs) {
+			if (!songs.hasOwnProperty(id)) { continue; }
+			pinned.push(id);
+			if (!have[id]) { missing.push(id); }
+			items.push(this._safeRecord(songs[id]));
+		}
+		return { returnValue: true, available: available, pinned: pinned, missing: missing, items: items };
+	},
+
+	// A copy of a saved-song record that is safe to put in a Luna reply: any astral text
+	// (a record saved before pin() started encoding it) is turned into the ASCII marker.
+	_safeRecord: function (rec) {
+		var out = {}, k;
+		for (k in rec) {
+			if (rec.hasOwnProperty(k)) { out[k] = encodeAstral(rec[k]); }
+		}
+		return out;
+	},
+
+	// Save a song for offline play: record the intent, then fetch it if it isn't already
+	// cached. args: {songId, libraryId, title, artist, album, artUrl}.
+	pin: function (args) {
+		var id = args && args.songId ? ('' + args.songId) : '';
+		if (!id) { return { returnValue: false, error: 'pinSong: songId required' }; }
+		var rec = {
+			id: id, libraryId: args.libraryId ? ('' + args.libraryId) : '',
+			title: encodeAstral(args.title || ''), artist: encodeAstral(args.artist || ''), album: encodeAstral(args.album || ''),
+			artUrl: args.artUrl || '', savedAt: Date.now()
+		};
+		this.offline().songs[id] = rec;
+		this._save(OFFLINE_FILE, this.offline());
+		var cached = this.isValid(id);
+		if (!cached) { JukiePrefetch.enqueue(id, rec.libraryId); }
+		return { returnValue: true, id: id, queued: !cached };
+	},
+
+	// Remove a saved song and its file. The track being played right now keeps its file
+	// (it just becomes ordinary cache and is evicted by the LRU in due course).
+	unpin: function (args) {
+		var id = args && args.songId ? ('' + args.songId) : '';
+		if (!id) { return { returnValue: false, error: 'unpinSong: songId required' }; }
+		delete this.offline().songs[id];
+		this._save(OFFLINE_FILE, this.offline());
+		JukiePrefetch.cancel(id);
+		if (id !== JukiePlayer.songId) {
+			this._remove({ id: id, path: songFile(id) });
+			this._saveConfig();
+		}
+		return { returnValue: true, id: id };
+	}
+};
+
+// Serial background downloader for saved songs: one jukie-drm at a time, and never while
+// a play fetch is in flight (a Pre2-class CPU should not decrypt two tracks at once).
+var JukiePrefetch = {
+	queue: [],     // [{id, libraryId}] waiting
+	active: null,  // {id, proc, cancelled} downloading now
+	failed: {},    // id -> last error text
+	_waiting: false,
+
+	enqueue: function (id, libraryId) {
+		var i;
+		if (this.active && this.active.id === id) { return; }
+		for (i = 0; i < this.queue.length; i++) { if (this.queue[i].id === id) { return; } }
+		delete this.failed[id];
+		this.queue.push({ id: id, libraryId: libraryId || '' });
+		this._pump();
+	},
+
+	cancel: function (id) {
+		var i;
+		for (i = this.queue.length - 1; i >= 0; i--) {
+			if (this.queue[i].id === id) { this.queue.splice(i, 1); }
+		}
+		delete this.failed[id];
+		if (this.active && this.active.id === id) {
+			this.active.cancelled = true;
+			JukiePlayer._signal('KILL', this.active.proc.pid);
+		}
+	},
+
+	_pump: function () {
+		var self = this;
+		if (this.active || !this.queue.length) { return; }
+		if (JukiePlayer.dl) { // a play fetch is running - try again shortly
+			if (!this._waiting) {
+				this._waiting = true;
+				setTimeout(function () { self._waiting = false; self._pump(); }, 2000);
+			}
+			return;
+		}
+		var item = this.queue.shift();
+		if (JukieCache.isValid(item.id)) { this._pump(); return; }
+		var args = ['-json', '-o', songFile(item.id), item.id];
+		if (item.libraryId) { args.push(item.libraryId); }
+		JukiePlayer.log('prefetch: ' + DRM + ' ' + args.join(' '));
+		JukieCache._ensureDirs();
+		var proc = cp.spawn(DRM, args), outbuf = '', errbuf = '', done = false;
+		var act = { id: item.id, proc: proc, cancelled: false };
+		this.active = act;
+		if (proc.stdout) { proc.stdout.on('data', function (d) { outbuf += d; }); }
+		if (proc.stderr) { proc.stderr.on('data', function (d) { errbuf += d; }); }
+		function finish(err) {
+			if (done) { return; }
+			done = true;
+			self.active = null;
+			if (err && !act.cancelled) {
+				self.failed[item.id] = err;
+				JukiePlayer.log('prefetch failed for ' + item.id + ': ' + err);
+			}
+			self._pump();
+		}
+		proc.on('error', function (e) { finish('spawn error: ' + e); });
+		proc.on('exit', function (code) {
+			var res = null;
+			try { res = JSON.parse(outbuf); } catch (e) {}
+			if (code === 0 && res && res.ok) { finish(null); }
+			else { finish(res && res.error ? res.error : ('exit ' + code + ' ' + errbuf)); }
+		});
+	},
+
+	status: function () {
+		var q = [], f = [], i, id;
+		for (i = 0; i < this.queue.length; i++) { q.push(this.queue[i].id); }
+		for (id in this.failed) {
+			if (this.failed.hasOwnProperty(id)) { f.push({ id: id, error: this.failed[id] }); }
+		}
+		return { returnValue: true, active: this.active ? this.active.id : '', queued: q, failed: f };
+	}
+};
+
+// ---------------------------------------------------------------------------
 // Singleton player. All command assistants run in this one node process, so
 // this object persists across Luna requests.
 // ---------------------------------------------------------------------------
@@ -250,7 +592,7 @@ var JukiePlayer = {
 	_signal: function (signame, pid) {
 		pid = pid || (this.child && this.child.pid);
 		if (!pid) { return; }
-		try { cp.spawn('/bin/sh', ['-c', 'kill -' + signame + ' ' + pid]); }
+		try { spawnQuiet('/bin/sh', ['-c', 'kill -' + signame + ' ' + pid]); }
 		catch (e) { this.log('signal ' + signame + ' (' + pid + ') failed: ' + e); }
 	},
 
@@ -260,7 +602,7 @@ var JukiePlayer = {
 	// un-suspend resumes from the same spot. It's a GLOBAL toggle on the output sink,
 	// so we must un-suspend whenever playback is torn down/replaced (see _kill).
 	_suspendSink: function (yes) {
-		try { cp.spawn(PACTL, ['suspend-sink', SINK, yes ? '1' : '0'], { env: pulseEnv() }); }
+		try { spawnQuiet(PACTL, ['suspend-sink', SINK, yes ? '1' : '0'], { env: pulseEnv() }); }
 		catch (e) { this.log('suspend-sink ' + yes + ' failed: ' + e); }
 	},
 
@@ -305,7 +647,7 @@ var JukiePlayer = {
 		var pid = this.child.pid;
 		var myGen = this.gen;
 		if (retriesLeft === undefined) { retriesLeft = 5; }
-		var list = cp.spawn(PACTL, ['list', 'sink-inputs'], { env: pulseEnv() });
+		var list = spawnQuiet(PACTL, ['list', 'sink-inputs'], { env: pulseEnv() });
 		var out = '';
 		if (list.stdout) { list.stdout.on('data', function (d) { out += d; }); }
 		list.on('exit', function () {
@@ -319,7 +661,7 @@ var JukiePlayer = {
 				}
 				return;
 			}
-			try { cp.spawn(PACTL, ['set-sink-input-volume', idx, String(self._volRaw(self.volume))], { env: pulseEnv() }); }
+			try { spawnQuiet(PACTL, ['set-sink-input-volume', idx, String(self._volRaw(self.volume))], { env: pulseEnv() }); }
 			catch (e) { self.log('set-sink-input-volume failed: ' + e); }
 		});
 	},
@@ -348,44 +690,18 @@ var JukiePlayer = {
 		try { return fs.statSync(path).size > 0; } catch (e) { return false; }
 	},
 
-	// Bound the on-disk cache so it can't grow without limit. /media/internal has GBs,
-	// so we keep a generous LRU (current + maxOthers newest tracks), evicting the rest.
-	// (A future db8-backed cache can pin/manage this more cleverly.)
-	_capCache: function (keep, maxOthers) {
-		try {
-			var dir = CACHE_DIR, names = fs.readdirSync(dir), list = [], i;
-			for (i = 0; i < names.length; i++) {
-				var n = names[i], p = dir + '/' + n;
-				if (n.substr(n.length - 4) === '.m4a' && p !== keep) {
-					try { list.push({ p: p, t: fs.statSync(p).mtime.getTime() }); } catch (e) {}
-				}
-			}
-			list.sort(function (a, b) { return b.t - a.t; }); // newest first
-			for (i = maxOthers; i < list.length; i++) {
-				try { fs.unlinkSync(list[i].p); } catch (e) {}
-				try { fs.unlinkSync(list[i].p + '.json'); } catch (e) {} // its metadata sidecar
-			}
-		} catch (e) { this.log('cache cap failed: ' + e); }
-	},
-
-	// Remove every cached track (Settings > "Clear Cache", separate from the on/off
-	// toggle - clearing shouldn't require disabling caching). Keeps whatever's currently
-	// playing (matches _capCache's "current" exemption) so it doesn't cut out mid-song.
+	// Remove every cached track (Settings > "Clear Cache"). Keeps whatever's currently
+	// playing so it doesn't cut out mid-song, and every song the user saved for offline
+	// play (those are removed individually, via unpinSong).
 	clearCache: function () {
-		var removed = 0, freedBytes = 0;
-		try {
-			var dir = CACHE_DIR, names = fs.readdirSync(dir), i;
-			for (i = 0; i < names.length; i++) {
-				var n = names[i], p = dir + '/' + n;
-				if (n.substr(n.length - 4) !== '.m4a' || p === this.mediaFile) { continue; }
-				try {
-					freedBytes += fs.statSync(p).size;
-					fs.unlinkSync(p);
-					try { fs.unlinkSync(p + '.json'); } catch (e) {}
-					removed++;
-				} catch (e) {}
-			}
-		} catch (e) { this.log('clearCache failed: ' + e); }
+		var removed = 0, freedBytes = 0, es = JukieCache.entries(), i;
+		for (i = 0; i < es.length; i++) {
+			if (es[i].pinned || es[i].path === this.mediaFile) { continue; }
+			freedBytes += es[i].size;
+			JukieCache._remove(es[i]);
+			removed++;
+		}
+		JukieCache._saveConfig();
 		return { returnValue: true, removed: removed, freedBytes: freedBytes };
 	},
 
@@ -404,8 +720,11 @@ var JukiePlayer = {
 	},
 
 	// Full-track playback: run jukie-drm (Widevine) to produce a decrypted .m4a, then
-	// play it. /tmp/jukie-<id>.m4a doubles as a session cache - a re-play is instant.
-	playSong: function (songId, libraryId) {
+	// play it. CACHE_DIR/<id>.m4a is the cache - a re-play is instant.
+	//
+	// offlineOnly: the app knows it has no network, so a track that isn't cached fails
+	// immediately instead of spawning jukie-drm and waiting out its network timeouts.
+	playSong: function (songId, libraryId, offlineOnly) {
 		var self = this;
 		this._beginFetch();
 		this.songId = songId;
@@ -413,11 +732,18 @@ var JukiePlayer = {
 		this.url = 'song:' + songId;
 		this.mediaFile = songFile(songId);
 		this.duration = DEFAULT_PREVIEW_DURATION; // until jukie-drm reports the real length
-		this._capCache(this.mediaFile, 60); // keep current + 60 newest tracks (~430MB)
+		if (offlineOnly && !JukieCache.isValid(songId)) {
+			this._fail('not available offline');
+			return;
+		}
+		JukieCache.touch(songId); // recency for the LRU
+		JukieCache.enforce(this.mediaFile); // keep the unsaved cache within the size limit
 
-		// jukie-drm owns caching: on a cache hit it still does the quick webPlayback so
-		// it always reports the real duration (vital - else _checkEnded caps a cached
-		// full track at 30s). So we always run it; cache hits are ~1s instead of ~6s.
+		// jukie-drm owns caching: on a cache hit with its metadata sidecar it returns at
+		// once with NO network at all (jukie-drm main.go run(): "cache hit (offline)"), with
+		// the real duration from the sidecar (vital - else _checkEnded caps a cached full
+		// track at 30s). A cached file WITHOUT a sidecar (older cache) falls through to
+		// webPlayback, writes the sidecar, and only then becomes offline-capable.
 		var myGen = this.gen; // this playback's generation; ignore exits once superseded
 		var args = ['-json', '-o', this.mediaFile, songId];
 		if (libraryId) { args.push(libraryId); }
@@ -450,6 +776,64 @@ var JukiePlayer = {
 		});
 	},
 
+	// Lunacy (webOS on Android) has no gst-launch/pulse, so there the service only FETCHES:
+	// run jukie-drm to put the decrypted track in the cache and report back; the page plays
+	// the cached file itself through its own <audio> (see mojo/app/models/playback-service.js).
+	// done({returnValue, durationMs, title, artist}) or ({returnValue:false, error, ...}).
+	// offlineOnly: fail at once if the track isn't already cached, as playSong does.
+	prepareSong: function (songId, libraryId, offlineOnly, done) {
+		var self = this, file = songFile(songId);
+		if (!songId) { done({ returnValue: false, error: 'prepareSong: songId required' }); return; }
+		this._prepGen = (this._prepGen || 0) + 1;
+		var myGen = this._prepGen;
+		// A newer request supersedes an older fetch still in flight - stop it downloading.
+		if (this.dl) { this._signal('KILL', this.dl.pid); this.dl = null; }
+		this.songId = songId;
+		this.libraryId = libraryId || '';
+		this.url = 'song:' + songId;
+		this.mediaFile = file; // keeps clearCache / unpinSong from deleting the track in use
+		if (offlineOnly && !JukieCache.isValid(songId)) {
+			done({ returnValue: false, error: 'not available offline' });
+			return;
+		}
+		JukieCache.touch(songId);
+		JukieCache.enforce(file);
+
+		var args = ['-json', '-o', file, songId];
+		if (libraryId) { args.push(libraryId); }
+		this.log('prepare: ' + DRM + ' ' + args.join(' '));
+		var p = cp.spawn(DRM, args), outbuf = '', errbuf = '', finished = false;
+		this.dl = p; // also holds off the offline prefetch queue while we fetch
+		if (p.stdout) { p.stdout.on('data', function (d) { outbuf += d; }); }
+		if (p.stderr) { p.stderr.on('data', function (d) { errbuf += d; self.log('drm: ' + d); }); }
+		function finish(res) {
+			if (finished) { return; }
+			finished = true;
+			if (self.dl === p) { self.dl = null; }
+			if (myGen !== self._prepGen) { res = { returnValue: false, error: 'superseded', superseded: true }; }
+			done(res);
+		}
+		p.on('error', function (e) {
+			var perm = isDrmPermissionError(e);
+			if (perm) { self.permissionError = true; }
+			finish({ returnValue: false, error: 'jukie-drm spawn error: ' + e, permissionError: perm });
+		});
+		p.on('exit', function (code) {
+			var res = null;
+			try { res = JSON.parse(outbuf); } catch (e) {}
+			if (code !== 0 || !res || !res.ok) {
+				var perm = isDrmPermissionError(errbuf);
+				if (perm) { self.permissionError = true; }
+				finish({
+					returnValue: false, permissionError: perm,
+					error: (res && res.error) ? res.error : ('exit ' + code + ' ' + errbuf)
+				});
+				return;
+			}
+			finish({ returnValue: true, songId: songId, durationMs: res.durationMs || 0, title: encodeAstral(res.title || ''), artist: encodeAstral(res.artist || '') });
+		});
+	},
+
 	// apiGet: proxy one Apple Music REST API request through jukie-drm.
 	//
 	// Why this is here at all: the webOS 2.x in-app browser CANNOT reach Apple.
@@ -463,11 +847,26 @@ var JukiePlayer = {
 	// app still calls the API directly there.)
 	//
 	// done(result) receives {returnValue:true, json} or {returnValue:false, error}.
-	apiGet: function (path, done) {
-		var self = this;
+	//
+	// Emoji: by default jukie-drm STRIPS every astral character from the body (they cannot
+	// cross this service's Luna replies - see encodeAstral above). A caller that can draw
+	// emoji, or at least knows to remove the markers itself, passes emoji:true and gets them
+	// as ASCII markers ({{e:1F970}}) instead, via jukie-drm's `-emoji encode` flag. (An
+	// environment variable was tried first and was not reliably delivered to the helper from
+	// inside this service's jail.) A helper binary built before the flag existed rejects it
+	// ("flag provided but not defined"), so that one failure is retried without the flag -
+	// the worst case is the old stripping behaviour, never a failed request.
+	apiGet: function (path, done, emoji) {
 		if (!path) { done({returnValue: false, error: 'apiGet: path required'}); return; }
-		this.log('api: ' + path);
-		var p = cp.spawn(DRM, ['-api', path]);
+		this.log('api: ' + path + (emoji ? ' (emoji markers)' : ''));
+		this._apiRun(path, !!emoji, done);
+	},
+
+	_apiRun: function (path, emoji, done) {
+		var self = this;
+		var args = ['-api', path];
+		if (emoji) { args.push('-emoji', 'encode'); }
+		var p = cp.spawn(DRM, args);
 		var outbuf = '', errbuf = '';
 		if (p.stdout) { p.stdout.on('data', function (d) { outbuf += d; }); }
 		if (p.stderr) { p.stderr.on('data', function (d) { errbuf += d; }); }
@@ -479,6 +878,11 @@ var JukiePlayer = {
 			var json = null;
 			try { json = JSON.parse(outbuf); } catch (e) {}
 			if (code !== 0) {
+				if (emoji && /flag provided but not defined/.test(errbuf)) {
+					self.log('jukie-drm predates -emoji; retrying without it (emoji will be stripped)');
+					self._apiRun(path, false, done);
+					return;
+				}
 				// jukie-drm prints Apple's own error JSON even on a non-2xx, which is
 				// far more useful to surface than a bare exit code - pass it along.
 				self.log('api failed: ' + errbuf);
@@ -670,7 +1074,7 @@ var JukiePlayer = {
 			return this.resume();
 		}
 		if (args.songId) {
-			this.playSong('' + args.songId, args.libraryId ? ('' + args.libraryId) : '');
+			this.playSong('' + args.songId, args.libraryId ? ('' + args.libraryId) : '', !!args.offlineOnly);
 		} else if (args.url) {
 			this._spawn(args.url);
 		} else if (this.url) {
@@ -874,6 +1278,11 @@ var JukiePlayer = {
 	}
 };
 
+// Make sure the cache dirs exist and trim the cache to its limit on every service start
+// (the limit may have been lowered, or tracks left over from an interrupted session).
+JukieCache._ensureDirs();
+JukieCache.enforce('');
+
 // ---------------------------------------------------------------------------
 // Command assistants. Each reads request params and returns the player status.
 // ---------------------------------------------------------------------------
@@ -917,6 +1326,49 @@ GetStatusCommandAssistant.prototype.run = function (future) {
 var ClearCacheCommandAssistant = function () {};
 ClearCacheCommandAssistant.prototype.run = function (future) {
 	future.result = JukiePlayer.clearCache();
+	return future;
+};
+
+// Cache size + offline (saved songs). All synchronous: they only touch small JSON files and
+// directory listings, and queue any download on JukiePrefetch's own background process.
+var SetCacheLimitCommandAssistant = function () {};
+SetCacheLimitCommandAssistant.prototype.run = function (future) {
+	var args = readArgs(this, future);
+	if (!JukieCache.setLimit(args.mb)) {
+		future.result = { returnValue: false, error: 'setCacheLimit: mb must be a number >= 0' };
+	} else {
+		future.result = JukieCache.info();
+	}
+	return future;
+};
+
+var GetCacheInfoCommandAssistant = function () {};
+GetCacheInfoCommandAssistant.prototype.run = function (future) {
+	future.result = JukieCache.info();
+	return future;
+};
+
+var PinSongCommandAssistant = function () {};
+PinSongCommandAssistant.prototype.run = function (future) {
+	future.result = JukieCache.pin(readArgs(this, future));
+	return future;
+};
+
+var UnpinSongCommandAssistant = function () {};
+UnpinSongCommandAssistant.prototype.run = function (future) {
+	future.result = JukieCache.unpin(readArgs(this, future));
+	return future;
+};
+
+var ListOfflineCommandAssistant = function () {};
+ListOfflineCommandAssistant.prototype.run = function (future) {
+	future.result = JukieCache.list();
+	return future;
+};
+
+var GetOfflineStatusCommandAssistant = function () {};
+GetOfflineStatusCommandAssistant.prototype.run = function (future) {
+	future.result = JukiePrefetch.status();
 	return future;
 };
 
@@ -964,8 +1416,20 @@ SetCredentialsCommandAssistant.prototype.run = function (future) {
 // whole nest/setResult branch, and the async future.result assignment below
 // resolves the SAME future the dispatcher already attached its own reply
 // listener to, exactly as intended.
+// Async like apiGet (see the note above: do not `return future` here).
+var PrepareSongCommandAssistant = function () {};
+PrepareSongCommandAssistant.prototype.run = function (future) {
+	var args = readArgs(this, future);
+	JukiePlayer.prepareSong(
+		args.songId ? ('' + args.songId) : '',
+		args.libraryId ? ('' + args.libraryId) : '',
+		!!args.offlineOnly,
+		function (res) { future.result = res; }
+	);
+};
+
 var ApiGetCommandAssistant = function () {};
 ApiGetCommandAssistant.prototype.run = function (future) {
 	var args = readArgs(this, future);
-	JukiePlayer.apiGet(args.path, function (res) { future.result = res; });
+	JukiePlayer.apiGet(args.path, function (res) { future.result = res; }, !!args.emoji);
 };

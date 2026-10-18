@@ -25,13 +25,46 @@ PreferencesAssistant.prototype.SEARCH_LIMITS = [
 	{ label: "25 results", value: 25 }
 ];
 
+// Track cache size choices, in MB. 0 keeps only the track being played; tracks saved for
+// offline play are never evicted and don't count against this limit.
+PreferencesAssistant.prototype.CACHE_SIZES = [
+	{ label: "Off (current track only)", value: 0 },
+	{ label: "128 MB", value: 128 },
+	{ label: "256 MB", value: 256 },
+	{ label: "512 MB", value: 512 },
+	{ label: "1 GB", value: 1024 },
+	{ label: "2 GB", value: 2048 },
+	{ label: "4 GB", value: 4096 },
+	{ label: "8 GB", value: 8192 }
+];
+
+PreferencesAssistant.prototype.fmtBytes = function (b) {
+	var mb = (b || 0) / 1048576;
+	if (mb >= 1024) { return (Math.round(mb / 102.4) / 10) + " GB"; }
+	return (mb < 10 ? Math.round(mb * 10) / 10 : Math.round(mb)) + " MB";
+};
+
+// "In use: 312 MB · Saved offline: 2 songs (15 MB)" - straight from the service's files.
+PreferencesAssistant.prototype.refreshCacheUsage = function () {
+	var self = this;
+	Jukie.playback.getCacheInfo(function (r) {
+		var el = self.controller.get("cacheUsage");
+		if (!el) { return; }
+		if (!r || r.returnValue === false) { el.innerHTML = ""; return; }
+		var n = r.pinnedCount || 0;
+		el.innerHTML = "In use: " + self.fmtBytes(r.usedBytes) + " &middot; Saved offline: " +
+			n + (n === 1 ? " song" : " songs") + " (" + self.fmtBytes(r.pinnedBytes) + ")";
+	});
+};
+
 PreferencesAssistant.prototype.setup = function () {
+	Jukie.setupBack(this.controller);
 	var prefs = Jukie.prefs || Jukie.settings.defaults();
 
 	this.devModel = { value: prefs.developerToken || "" };
 	this.musicModel = { value: prefs.musicUserToken || "" };
 	this.storeModel = { value: prefs.storefront || "us" };
-	this.cacheModel = { value: prefs.cacheEnabled !== false };
+	this.cacheSizeModel = { value: typeof prefs.cacheLimitMB === "number" ? prefs.cacheLimitMB : 512 };
 	this.searchLimitModel = { value: prefs.searchResultLimit || 5 };
 
 	this.controller.setupWidget("devToken", {
@@ -51,7 +84,14 @@ PreferencesAssistant.prototype.setup = function () {
 		choices: this.STOREFRONTS, modelProperty: "value"
 	}, this.storeModel);
 
-	this.controller.setupWidget("cacheToggle", { modelProperty: "value" }, this.cacheModel);
+	// A limit set some other way (e.g. luna-send) that isn't one of the stock choices still
+	// shows up as itself instead of an empty selector.
+	var sizeChoices = this.CACHE_SIZES.slice();
+	if (!sizeChoices.some(function (c) { return c.value === this.cacheSizeModel.value; }, this)) {
+		sizeChoices.push({ label: this.cacheSizeModel.value + " MB", value: this.cacheSizeModel.value });
+	}
+	this.controller.setupWidget("cacheSize", { choices: sizeChoices, modelProperty: "value" }, this.cacheSizeModel);
+	this.refreshCacheUsage();
 
 	// No `label` attribute here either - see the storefront note above.
 	this.controller.setupWidget("searchLimit", {
@@ -83,7 +123,7 @@ PreferencesAssistant.prototype.onSave = function () {
 		developerToken: (this.devModel.value || "").replace(/\s+/g, ""),
 		musicUserToken: (this.musicModel.value || "").replace(/\s+/g, ""),
 		storefront: this.storeModel.value || "us",
-		cacheEnabled: this.cacheModel.value !== false,
+		cacheLimitMB: this.cacheSizeModel.value,
 		streamQuality: (Jukie.prefs && Jukie.prefs.streamQuality) || "high",
 		searchResultLimit: this.searchLimitModel.value || 5
 	};
@@ -96,6 +136,7 @@ PreferencesAssistant.prototype.onSave = function () {
 		Jukie.apple.setStorefront(saved.storefront);
 		// Push to jukie-drm (full-track playback auth) via the service.
 		Jukie.playback.setCredentials(saved.developerToken, saved.musicUserToken);
+		Jukie.playback.setCacheLimit(saved.cacheLimitMB, function () { self.refreshCacheUsage(); });
 		self.setStatus("Saved");
 		self.controller.get("saveBtn").mojo.deactivate();
 		Mojo.Controller.getAppController().showBanner("Settings saved", {});
@@ -128,7 +169,9 @@ PreferencesAssistant.prototype.onClearCache = function () {
 	Jukie.playback.clearCache(function (response) {
 		if (response && response.returnValue !== false) {
 			var freed = response.freedBytes ? (" (" + Math.round(response.freedBytes / 1048576) + " MB)") : "";
-			self.setStatus("Cache cleared" + freed);
+			self.setStatus("Cache cleared" + freed + " - songs saved offline were kept");
+			self.refreshCacheUsage();
+			Jukie.refreshOffline();
 		} else {
 			self.setStatus("Clear cache failed");
 		}

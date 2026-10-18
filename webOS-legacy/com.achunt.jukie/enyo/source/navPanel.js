@@ -57,6 +57,10 @@ enyo.kind({
                 {name: "libAlbums", kind: "Item", layoutKind: "HFlexLayout", pack: "start", align: "center", navstring: "Albums", className: "albums", onclick: "onClickLibraryView", components: [
                     {className: "icon"},
                     {content: $L("Albums"), className: "name", flex: 1}
+                ]},
+                {name: "libSaved", kind: "Item", layoutKind: "HFlexLayout", pack: "start", align: "center", navstring: "Saved", className: "saved", onclick: "onClickLibraryView", components: [
+                    {className: "icon"},
+                    {content: $L("Saved Offline"), className: "name", flex: 1}
                 ]}
             ]},
             {name: "navPlaylistDrawer", kind: "DividerDrawer", caption: $L("Playlists"), animate: true, onOpenChanged: "onOpenAnimationComplete", components: [
@@ -208,8 +212,8 @@ enyo.kind({
             this.strPlaylistID = "";
         }
 
-        this.$.lblNowPlayingText.setContent(objSetPlaybackList.strListText || "");
-        this.$.lblNowPlayingSubText.setContent(objSetPlaybackList.strListSubText || "");
+        JukieEmoji.setContent(this.$.lblNowPlayingText, objSetPlaybackList.strListText || "");
+        JukieEmoji.setContent(this.$.lblNowPlayingSubText, objSetPlaybackList.strListSubText || "");
         this.$.ctrlDefaultThumb.show();
 
         if (this.strNowPlayingImage) {
@@ -224,8 +228,8 @@ enyo.kind({
     updateNowPlaying: function (objTrackInfo) {
         var strThumbURL = "";
 
-        this.$.lblNowPlayingText.setContent(objTrackInfo.strTrackTitle || "");
-        this.$.lblNowPlayingSubText.setContent(objTrackInfo.strTrackArtist || "");
+        JukieEmoji.setContent(this.$.lblNowPlayingText, objTrackInfo.strTrackTitle || "");
+        JukieEmoji.setContent(this.$.lblNowPlayingSubText, objTrackInfo.strTrackArtist || "");
         this.$.ctrlDefaultThumb.show();
         strThumbURL = objTrackInfo.strTrackImage || "";
         this.setNowPlayingImage(strThumbURL);

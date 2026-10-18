@@ -121,7 +121,7 @@ enyo.kind({
 					this._strNewPlaylistID = null;
 					this.$.itemPlaylist.addRemoveClass("enyo-first", (intIndex < 1));
 					this.$.itemPlaylist.addRemoveClass("active", (playlist.id === this.strSelectedPlaylistID));
-					this.$.playlistName.setContent(playlist.name || playlist.title || "");
+					JukieEmoji.setContent(this.$.playlistName, playlist.name || playlist.title || "");
 					this.$.itemPlaylist.addRemoveClass("readonly", !!playlist.readonly);
 					this.$.itemPlaylist.addRemoveClass("editing", (playlist.id === this.strEditPlaylistID));
 					return true;

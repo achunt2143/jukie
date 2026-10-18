@@ -260,10 +260,70 @@ The app also calls many stock Palm services directly via `PalmService` kinds in
   despite listing `*.local.js`. Verified by extracting a built `.ipk`: `jasminerunner.html`
   and `spec/`, also in `build-ignore`, were both inside it too. That file is leftover
   from this project's original Ruby/Rake build tooling - the modern SDK's
-  `palm-package.bat` (what `deploy-jukie.ps1` actually uses) doesn't read it at all. A
-  package built for personal use with an intentionally-empty token (so Settings starts
-  blank) has to physically move the file out of the directory before packaging - see
-  `dev-stuff/build-personal-package.ps1`.
+  `palm-package.bat` (what `deploy-jukie.ps1` actually uses) doesn't read it at all.
+  Left unhandled this shipped the owner's real developer token + Music User Token inside
+  the `.ipk` (found 2026-08-08: a fresh install showed the owner's library with no tokens
+  entered). `deploy-jukie.ps1` now passes `--exclude=*.local.js` to `palm-package` and then
+  runs `check-ipk-secrets.py` on the finished `.ipk` (deleting it and aborting if any
+  `*.local.*` file is inside; the service's blank `secrets.local.json` placeholder passes
+  only while its token fields are empty). Consequence for personal devices: the baked-in
+  dev token no longer rides along, so tokens must come from Settings (or the web-token
+  auto-refresh).
+- **Cache size + saved-for-offline (written 2026-10-17, not yet run on a device):** Preferences
+  has a "Cache size" selector (`cacheLimitMB`, pushed to the service with `setCacheLimit`) and a
+  usage line (`getCacheInfo`). `utility/offline.js` (`JukieOffline`) holds online/offline and
+  the available/saved id sets; app.js feeds it from the connection manager and the service's
+  `listOffline`. Song rows in `listViewSongs.js` and `listViewAlbumDetail.js` end in a tappable
+  download badge (`songOffline`, shared helpers in `controls/listViewDraggable.js`) that saves/
+  removes the song; offline, unavailable rows are dimmed, tapping one shows a banner, and
+  `kindPlayback._skipUnavailableOffline` skips them. Gap vs. the Mojo build: no badge on the
+  artist-detail, genre-detail or playlist lists. Hold is taken by drag-to-playlist
+  (`onmousehold`), hence the badge. The badge art is `images/toaster-icon-downloads.png` (32x64:
+  grey arrow on top = cached, red below = saved/pending-dimmed), drawn at 24px by
+  `.offlineBadge:before` in `css/jukie-theme.css`; the nav entry's icon is the red half
+  (`.navigation .enyo-item.saved .icon` in `css/music.css`).
+  **"Saved Offline" list (verified on a Lunacy foldable 2026-10-17):** nav entry `libSaved` ->
+  `kindListViewSaved` (`source/listViewSaved.js`, pane view `viewListViewSaved`), rows built from
+  `JukieOffline.items` filtered by `JukieOffline.saved`. Rows are `enyo.SwipeableItem`s (stock
+  Cancel / **Remove** prompt); confirming raises `onToggleOffline`, so app.js's existing handler
+  unpins and `_repaintOfflineRows` (which includes `listViewSaved`) refreshes every list. It
+  deliberately does not extend `listViewDraggable` - its drag-to-playlist handlers would fight
+  the swipe, so song rows elsewhere stay non-swipeable. app.js calls `refreshList` when the view
+  is first shown and `renderList` when it is already showing, so only the first resets scroll.
+- **Enyo on Lunacy (2026-10-17, verified on a foldable):** a Lunacy phone *unfolded* presents
+  a tablet (TouchPad) identity, so the switcher sends it to THIS build (folded = Pre3 identity =
+  Mojo). Two things differ from a real webOS 3.x device, both keyed off `JukieLunacy`
+  (`utility/lunacy.js` - asks `palm://org.webosarchive.lunacy/system/getEnvironment` through the
+  raw PalmServiceBridge; `state` is undefined until answered, 4s cutoff):
+  1. **API calls** - `AppleMusicService.request` (`utility/applemusicservice.js`) sends them
+     through the service's `apiGet` (jukie-drm, which holds the tokens and refreshes the web
+     token itself, same as the Mojo build) instead of the WebView's `fetch`; no developer token
+     needed in Settings. Early requests wait for the probe.
+  2. **Playback** - there is no gst/pulse on Android, so `kindAudioPlayer` (`utility/audioplayer.js`,
+     `_wa*` methods) calls the service's `prepareSong` and plays the cached raw-ADTS file through
+     an `<audio>` element, using `utility/adts.js` (a verbatim copy of mojo's) for exact duration
+     and seeking. It is a port of the Mojo backend - see `../mojo/CLAUDE.md` "Lunacy playback"
+     for the design. Verified: play (cached + uncached), pause/resume, seek, library Refresh
+     (758 songs through the service), offline badges.
+  Fixed 2026-10-17 (verified): the now-playing strip used to show a generic note for songs
+  started from the library list because `_libRecordToItem` (app.js) gave song items no
+  `arThumbnails` (the nav strip reads `objSetPlaybackList.arThumbnails`); it now sets them.
+- **Emoji (2026-10-17; verified on the TouchPad):** the TouchPad has the owner's EmojiShim
+  system patch (`../../../webOS/emoji`, v3.1.0: patched `enyo.js` + `mojo/mojo.js`, `EmojiShim`
+  global, `enyo.emojiShimPatched`; the Pre2 has none). `utility/emoji.js` (`JukieEmoji`, a verbatim
+  copy lives in `mojo/app/models/emoji.js`) is the one place that decides what to do with an emoji:
+  `html()` for allowHtml controls (always escaped; drawn as images via `EmojiShim.render`, raw if a
+  canvas test says the engine draws colour emoji itself, else removed), `text()`, `strip()` (for
+  native surfaces - the status-bar banner is drawn by LunaSysMgr and shows two tofu boxes), `encode`
+  (for text sent to the service), `encodeDeep` (for db8) and `decode`. **Every place library text is
+  shown goes through `JukieEmoji.setContent(ctrl, text)` / `rowContent` (flyweight rows assign
+  `.content` directly, so the patch's own `setContent` hook never saw them) - use it for any new
+  text control.** `db8.js` `put`/`merge` store emoji as the ASCII marker `{{e:1F970}}`, because a
+  real one does not survive a db8 round trip on the TouchPad (it came back as U+FFFD - the nav
+  showed `90s` + a tofu box); **existing records stay damaged until Refresh Library re-stores
+  them.** At boot the app logs `emoji: shim=… enyoPatched=… native=… canRender=…`. Things the patch
+  cannot do: its hooks do not reach a plain `Input` (the emoji test app's text field shows tofu).
+  Known small gap: an A-Z divider for a name that starts with an emoji is "#".
 - Enyo leaks windows on desktop browser refresh; `index.html` has a `!window.PalmSystem`
   guard that tears down stale windows when run outside a device.
 - This codebase descends from the original Palm Music app, so many kind names and DB kinds

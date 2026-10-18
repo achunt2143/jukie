@@ -228,9 +228,9 @@ enyo.kind({
 	updateTrackInfoDisplay: function (objTrackInfo)
 	{
 		this.log();
-		this.$.lblTitle.setContent(objTrackInfo.strTrackTitle || "");
-		this.$.lblArtist.setContent(objTrackInfo.strTrackArtist || "");
-		this.$.lblAlbum.setContent(objTrackInfo.strTrackAlbum || "");
+		JukieEmoji.setContent(this.$.lblTitle, objTrackInfo.strTrackTitle || "");
+		JukieEmoji.setContent(this.$.lblArtist, objTrackInfo.strTrackArtist || "");
+		JukieEmoji.setContent(this.$.lblAlbum, objTrackInfo.strTrackAlbum || "");
 		if (objTrackInfo.strTrackImage)
 		{
 			this.$.art.applyStyle("background-image", "url(" + objTrackInfo.strTrackImage + ")");

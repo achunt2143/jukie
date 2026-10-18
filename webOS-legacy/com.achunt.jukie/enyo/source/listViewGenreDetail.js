@@ -55,9 +55,9 @@ enyo.kind({
 			if (this.arSongs !== undefined && this.arSongs[intIndex] !== undefined) {
 				objSong = this.arSongs[intIndex];
 				this.log("title: " + objSong.title);
-				this.$.songTitle.setContent(objSong.title || "");
-				this.$.songArtist.setContent(objSong.artist || "");
-				this.$.songAlbum.setContent(objSong.album || "");
+				JukieEmoji.setContent(this.$.songTitle, objSong.title || "");
+				JukieEmoji.setContent(this.$.songArtist, objSong.artist || "");
+				JukieEmoji.setContent(this.$.songAlbum, objSong.album || "");
 				this.$.itemMedia.setClassName("enyo-item song");
 				this.setPlayingStyles(this._trackId(objSong), this.$.itemMedia, this._strListQuery + this.strSortMode);
 				this.$.itemMedia.addRemoveClass("odd", (intIndex % 2 !== 0));
