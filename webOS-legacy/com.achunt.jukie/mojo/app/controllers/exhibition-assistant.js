@@ -38,9 +38,9 @@ ExhibitionAssistant.prototype._paintTrack = function (track) {
 	// Jukie.currentTrack (this scene's OWN stage's copy) is empty - the common case,
 	// since the track is normally started from the main app's stage instead.
 	this._track = track;
-	this.controller.get("exh-title").update((track.title || "Unknown").escapeHTML());
-	this.controller.get("exh-artist").update((track.artist || "").escapeHTML());
-	this.controller.get("exh-album").update((track.album || "").escapeHTML());
+	this.controller.get("exh-title").update(JukieEmoji.text(track.title || "Unknown").escapeHTML());
+	this.controller.get("exh-artist").update(JukieEmoji.text(track.artist || "").escapeHTML());
+	this.controller.get("exh-album").update(JukieEmoji.text(track.album || "").escapeHTML());
 	// Larger than Now Playing's art fetch (300) since this is a full-bleed background,
 	// not a bounded thumbnail. Jukie.artUrl also forces http - see its own note.
 	var art = Jukie.artUrl(track.artUrl, 640);

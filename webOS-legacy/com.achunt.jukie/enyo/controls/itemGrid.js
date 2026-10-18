@@ -30,12 +30,12 @@ enyo.kind({
 	
 	strItemTextChanged: function ()
 	{
-		this.$.lblItemText.setContent(this.strItemText);
+		JukieEmoji.setContent(this.$.lblItemText, this.strItemText);
 	},
 	
 	strItemSubTextChanged: function ()
 	{
-		this.$.lblItemSubText.setContent(this.strItemSubText);
+		JukieEmoji.setContent(this.$.lblItemSubText, this.strItemSubText);
 	},
 	
 	intTumbCountChanged: function ()

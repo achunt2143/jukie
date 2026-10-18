@@ -195,9 +195,9 @@ enyo.kind({
 				window.clearInterval(this.intervalCheckTrackTime);
 			}
 			
-			this.$.lblSongTitle.setContent(objTrackInfo.strTrackTitle);
+			JukieEmoji.setContent(this.$.lblSongTitle, objTrackInfo.strTrackTitle);
 //			this.$.lblArtistName.setContent(objTrackInfo.strTrackArtist + " - "+ objTrackInfo.strTrackAlbum); design says no album name :/
-			this.$.lblArtistName.setContent(objTrackInfo.strTrackArtist);
+			JukieEmoji.setContent(this.$.lblArtistName, objTrackInfo.strTrackArtist);
 
 			
 			this._boolUpdateSlider = true;

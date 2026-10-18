@@ -37,14 +37,24 @@
 
 param(
     [string]$Cmd = "smoke",
-    [ValidateSet("webos2", "webos3")]
+    [ValidateSet("webos2", "webos3", "android-arm64")]
     [string]$Target = "webos3"
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-if ($Target -eq "webos2") {
+# android-arm64: Lunacy (webOS on Android) on a 64-bit phone. 64-bit-only chips cannot run
+# the 32-bit webos3/webos2 builds, so this is a plain static linux/arm64 binary built with
+# the standard toolchain. Android has no /etc/resolv.conf - see internal/dnsfix.
+$goarch = "arm"
+if ($Target -eq "android-arm64") {
+    $go = @("$env:ProgramFiles\Go\bin\go.exe", "$env:LOCALAPPDATA\Programs\Go\bin\go.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $go) { throw "go.exe not found - install Go (winget install GoLang.Go)" }
+    $goarch = "arm64"
+    Remove-Item Env:\GOARM -ErrorAction SilentlyContinue
+} elseif ($Target -eq "webos2") {
     $go = "$env:USERPROFILE\sdk\go1.26-pre2\bin\go.exe"
     if (-not (Test-Path $go)) {
         throw "Patched webOS2 Go toolchain not found at $go - build it first with goruntime-patch\apply.ps1 (see goruntime-patch\FINDINGS.md)."
@@ -57,7 +67,7 @@ if ($Target -eq "webos2") {
     $env:GOARM = "7"
 }
 
-$env:GOOS = "linux"; $env:GOARCH = "arm"; $env:CGO_ENABLED = "0"
+$env:GOOS = "linux"; $env:GOARCH = $goarch; $env:CGO_ENABLED = "0"
 
 New-Item -ItemType Directory -Force -Path build | Out-Null
 $out = if ($Cmd -eq "jukie-drm") { "build\jukie-drm-$Target" } else { "build\jukie-$Cmd" }
@@ -65,4 +75,4 @@ $out = if ($Cmd -eq "jukie-drm") { "build\jukie-drm-$Target" } else { "build\juk
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
 Get-Item $out | Select-Object Name, @{n="KB";e={[int]($_.Length/1KB)}}
-Write-Host "built $out for linux/arm (GOARM=$($env:GOARM), $Target toolchain)" -ForegroundColor Green
+Write-Host "built $out for linux/$goarch (GOARM=$($env:GOARM), $Target toolchain)" -ForegroundColor Green

@@ -15,6 +15,12 @@ enyo.kind({
         onError: ""
     },
 
+    components: [
+        // Lunacy only (see request): API calls go through the playback service's jukie-drm
+        // helper instead of the WebView's fetch, exactly as the Mojo build does everywhere.
+        {name: "svcApi", kind: "PalmService", service: "palm://com.achunt.jukie.service/", method: "apiGet", onSuccess: "onApiResult", onFailure: "onApiResult"}
+    ],
+
     // Guards against ensureDeveloperToken() overlapping itself (a boot-time call and a
     // reactive 401 retry landing close together) - see ensureDeveloperToken/request.
     _refreshInFlight: null,
@@ -75,7 +81,12 @@ enyo.kind({
     },
 
     ready: function () {
-        if (!this.developerToken) {
+        // On Lunacy the service's jukie-drm holds the tokens (and refreshes the web token
+        // itself), so this app needs no developer token of its own there.
+        if (!this.developerToken && !JukieLunacy.isLunacy()) {
+            // At boot the Lunacy probe may not have answered yet (state undefined) - stay
+            // quiet then; only complain once we know this isn't Lunacy.
+            if (JukieLunacy.state === undefined) { return false; }
             this.error("missing developerToken - catalog requests will fail");
             this.doError({ error: new Error("Missing Apple Music developer token") });
             return false;
@@ -90,6 +101,16 @@ enyo.kind({
     // one in-flight attempt instead of racing separate fetches.
     ensureDeveloperToken: function (force) {
         var self = this;
+        // Wait for the Lunacy probe, then skip the browser-side scrape there: jukie-drm
+        // (behind request()'s service route) does its own token refresh.
+        if (JukieLunacy.state === undefined) {
+            return new Promise(function (resolve) {
+                JukieLunacy.whenKnown(function () { resolve(self.ensureDeveloperToken(force)); });
+            });
+        }
+        if (JukieLunacy.isLunacy()) {
+            return Promise.resolve(this.developerToken);
+        }
         if (this._refreshInFlight) {
             return this._refreshInFlight;
         }
@@ -125,10 +146,60 @@ enyo.kind({
         return parts.join("&");
     },
 
+    // Lunacy: one API GET through the service's jukie-drm. Resolves the parsed JSON, or rejects
+    // with Apple's own error text when the helper managed to read a response body.
+    _requestViaService: function (url) {
+        var self = this;
+        this.log("GET (via service)", url);
+        return new Promise(function (resolve, reject) {
+            // emoji: true asks jukie-drm for ASCII emoji markers instead of stripping the emoji,
+            // but only when this device can actually draw them (otherwise the page would just
+            // remove the markers again, and an older jukie-drm ignores the request anyway).
+            var req = self.$.svcApi.call({path: url, emoji: JukieEmoji.canRender()});
+            req.callback = function (response) {
+                if (response && response.returnValue !== false && response.json) {
+                    resolve(response.json);
+                    return;
+                }
+                reject(new Error(self._apiError(response, url)));
+            };
+        }).catch(function (err) {
+            self.error("request failed", url, err);
+            self.emitSignal("onAppleMusicError", {error: err});
+            throw err;
+        });
+    },
+
+    onApiResult: function (sender, response, request) {
+        if (request && request.callback) { request.callback(response || {returnValue: false}); }
+    },
+
+    _apiError: function (response, url) {
+        var errs = response && response.json && response.json.errors;
+        if (errs && errs.length && errs[0]) {
+            return (errs[0].title || "Apple Music error") +
+                (errs[0].detail ? (": " + errs[0].detail) : "") +
+                (errs[0].status ? (" (" + errs[0].status + ")") : "");
+        }
+        if (response && response.error) { return "" + response.error; }
+        return "Apple Music request failed: " + url;
+    },
+
     request: function (path, params, _isRetry) {
         var self = this;
         var query = this._buildQuery(params);
         var url = this.API_BASE + path + (query ? ("?" + query) : "");
+
+        // Which route? Only Lunacy goes through the service; wait for its probe first so an
+        // early request (boot, first tap) can't take the wrong one.
+        if (JukieLunacy.state === undefined) {
+            return new Promise(function (resolve, reject) {
+                JukieLunacy.whenKnown(function () { self.request(path, params, _isRetry).then(resolve, reject); });
+            });
+        }
+        if (JukieLunacy.isLunacy()) {
+            return this._requestViaService(url);
+        }
 
         if (!this.developerToken) {
             return Promise.reject(new Error("AppleMusicService requires developerToken"));

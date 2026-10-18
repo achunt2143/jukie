@@ -1,5 +1,55 @@
 # Jukie — Release Notes
 
+## v2.1 — Offline Play, a Cache You Control, Lunacy, and Emoji
+
+Jukie 2.1 makes the music you care about available without a connection, lets you decide how
+much space it may use, runs on **Lunacy** (webOS on Android), and finally shows emoji in your
+playlist and song names on the TouchPad. Full detail is in the [CHANGELOG](CHANGELOG.md).
+
+### What's new
+
+- **Save songs for offline play.** Press and hold a song (Pre2/Mojo) or tap the download
+  arrow at the end of a row (TouchPad/Enyo). Saved songs are kept on the device, never
+  evicted, and play with no network. A **Saved Offline** list shows them (swipe a row
+  away to remove it), including songs that aren't in your synced library. A grey arrow marks a
+  song that is merely cached from listening; a red one means you saved it.
+- **Offline-aware playback.** With no connection, songs that aren't on the device are dimmed,
+  skipped by next/previous, and say so immediately instead of hanging on a timeout.
+- **Choose your cache size.** Settings → Cache size (Off to 8 GB, default 512 MB), with a live
+  usage readout. It is now a true least-recently-used cache; the track you're playing and your
+  saved songs are never evicted.
+- **Lunacy support.** Library sync and full-track playback work on Lunacy phones and tablets
+  (arm64 helper, in-page audio with accurate duration and seeking). The Pre-style UI gains a
+  back button, a full-width seek bar and a layout that uses tall screens.
+- **Emoji (TouchPad with the EmojiShim patch).** `90s 🥰` now shows the emoji instead of a
+  tofu box, in lists, headers, Now Playing and the player. It is capability-driven, so devices that
+  can't draw emoji simply show the text as before. **Refresh Library once** after updating so
+  existing records are stored in the new form.
+- **A more webOS-looking download indicator.**
+
+### Under the hood
+
+- **Emoji can't cross webOS's service bus or db8 as real characters.** Verified on a TouchPad: a
+  service reply turns an emoji into `??`, and db8 hands one back as a single replacement
+  character; a Pre2 swallows the reply outright. Jukie now carries emoji as a reversible ASCII
+  marker through the service, `jukie-drm` and the database, and only turns it back into the
+  real character at the last moment, if the device can show it.
+- **A packaged `.ipk` used to contain real credentials.** `palm-package` ignores `.gitignore`, so a
+  development token file was bundled and a fresh install appeared to have a library with no
+  tokens entered. The deploy script now excludes it and verifies the finished package.
+- **Publishing a package no longer risks the Widevine credential.** The personal build must
+  contain your `device.wvd`; the new `make-release-ipk.ps1` builds from a staged copy without it
+  and refuses to finish if any `.wvd` is inside.
+
+### Known limitations
+
+- Emoji are only drawn where something can draw them: the TouchPad with the EmojiShim patch, or a
+  modern engine such as Lunacy's (not yet verified on a Lunacy device). Elsewhere they are removed.
+  The status-bar banner and lock screen are native and can't show emoji at all.
+- Saving songs for offline play needs a connection to download them.
+- The published package has no Widevine credential; full-track playback needs your own `device.wvd`
+  in the service folder (library browsing, search and previews work without it).
+
 ## v2.0 — webOS 2.x Support (Pre2, Veer) + a Unified Package
 
 Jukie now runs on **two generations of webOS from one install**: the original

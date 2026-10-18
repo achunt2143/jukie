@@ -82,8 +82,21 @@ Call any of these as `palm://com.achunt.jukie.service/<command>`:
 | `seek`       | `{ seconds }`                          | same                                                                               |
 | `setVolume`  | `{ volume }` (0–100)                   | same                                                                               |
 | `getVolume`  | —                                      | `{ returnValue, volume }`                                                          |
-| `clearCache` | —                                      | `{ returnValue, removed, freedBytes }`                                             |
+| `clearCache` | —                                      | `{ returnValue, removed, freedBytes }` (keeps the playing track and saved songs)   |
 | `setCredentials` | `{ webDeveloperToken, musicUserToken }` (either optional) | `{ returnValue }`                                     |
+| `setCacheLimit` | `{ mb }` (0 = keep only the playing track) | cache info, below                                                              |
+| `getCacheInfo` | —                                    | `{ returnValue, limitMB, usedBytes, count, pinnedBytes, pinnedCount }`             |
+| `pinSong`    | `{ songId, libraryId, title, artist, album, artUrl }` | `{ returnValue, id, queued }` — save for offline play, downloading if needed |
+| `unpinSong`  | `{ songId }`                           | `{ returnValue, id }`                                                              |
+| `listOffline` | —                                     | `{ returnValue, available, pinned, missing, items }`                               |
+| `getOfflineStatus` | —                                | `{ returnValue, active, queued, failed }` (background downloads)                   |
+| `prepareSong` | `{ songId, libraryId, offlineOnly }`  | fetch + decrypt only, no playback (Lunacy plays the file in the page)              |
+| `apiGet`     | `{ path, emoji }`                      | `{ returnValue, json }` — one Apple Music API GET through `jukie-drm`; `emoji: true` keeps emoji as `{{e:HEX}}` markers instead of stripping them |
+
+`play` also takes `offlineOnly: true`, which fails an uncached track at once
+(`error: "not available offline"`) instead of waiting out network timeouts. Text that passes
+through this service (a saved song's title, a track's artist) carries emoji as the ASCII
+marker `{{e:1F970}}`, because real emoji don't survive Luna replies here — see CLAUDE.md.
 
 `setCredentials` merges a Developer Token / Music User Token pasted into the app's
 Settings screen into `secrets.local.json`, so `jukie-drm` (which only ever reads that
@@ -125,3 +138,9 @@ grep JukiePlayer /var/log/messages | tail
 `jukie-drm` binary — they're required here for full-track playback to work on-device,
 and are git-ignored at the project root. See [`jukie-drm`](../jukie-drm)'s README before
 touching either.
+
+A package built by `deploy-jukie.ps1` therefore contains your `device.wvd` — it is for your own
+devices only. To publish a package, run `make-release-ipk.ps1` (in `webOS-legacy/`): it
+builds from a staged copy with no `device.wvd` and a blanked `secrets.local.json`, and
+`check-ipk-secrets.py --public` must pass. A user of that package supplies their own
+credential, as the main README describes.

@@ -81,6 +81,9 @@ MainmenuAssistant.prototype.handleSelection = function (event) {
 	case "playlists":
 		this.controller.stageController.pushScene(row.id);
 		break;
+	case "saved":
+		this.controller.stageController.pushScene("songs", { offline: true, title: "Saved Offline" });
+		break;
 	case "search":
 		this.controller.stageController.pushScene("search");
 		break;
@@ -107,6 +110,13 @@ MainmenuAssistant.prototype.handleCommand = function (event) {
 
 MainmenuAssistant.prototype.refreshLibrary = function () {
 	var self = this;
+	if (!Jukie.online) {
+		this.controller.showAlertDialog({
+			title: "You're offline", message: "Refreshing your library needs an internet connection.",
+			choices: [{ label: "OK", value: "ok" }]
+		});
+		return;
+	}
 	if (Jukie.syncing) {
 		this.controller.showAlertDialog({
 			title: "Sync in progress", message: "A library refresh is already running.",
@@ -119,7 +129,10 @@ MainmenuAssistant.prototype.refreshLibrary = function () {
 	AppAssistant.startLibrarySync(function (err) {
 		self.showSyncScrim(false);
 		if (err) {
-			self.controller.get("library-status").innerHTML = "Refresh failed";
+			// (This used to look up a "library-status" element that doesn't exist, which threw
+			// here and swallowed the error dialog below - so a failed refresh looked like nothing.)
+			var statusLabel = self.controller.get("library-status-label");
+			if (statusLabel) { statusLabel.innerHTML = "Refresh failed"; }
 			self.controller.showAlertDialog({
 				title: "Refresh failed",
 				message: (err && err.message) ? err.message : "Could not sync your library.",
@@ -140,6 +153,10 @@ MainmenuAssistant.prototype.showSyncScrim = function (show) {
 	var div = this.controller.get("syncing-div");
 	if (!div) { return; }
 	div.style.display = show ? "block" : "none";
+	// The framework hard-codes the spinner 148px down, which is mid-screen only on a
+	// 480px-class display. Never less than that, so those screens look exactly as before.
+	var spinner = this.controller.get("sync-spinner");
+	if (spinner) { spinner.style.marginTop = Math.max(148, Math.round(window.innerHeight / 2) - 90) + "px"; }
 	this.spinnerModel.spinning = !!show;
 	this.controller.modelChanged(this.spinnerModel);
 };

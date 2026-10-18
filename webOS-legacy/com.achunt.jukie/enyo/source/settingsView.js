@@ -62,12 +62,22 @@ var JUKIE_STOREFRONTS = [
 	{caption: "Venezuela", value: "ve"}, {caption: "Vietnam", value: "vn"}
 ];
 
+// Track cache size choices, in MB. 0 keeps only the track being played; tracks saved for
+// offline play are never evicted and don't count against this limit.
+var JUKIE_CACHE_SIZES = [
+	{caption: "Off (current track only)", value: 0},
+	{caption: "128 MB", value: 128}, {caption: "256 MB", value: 256},
+	{caption: "512 MB", value: 512}, {caption: "1 GB", value: 1024},
+	{caption: "2 GB", value: 2048}, {caption: "4 GB", value: 4096},
+	{caption: "8 GB", value: 8192}
+];
+
 enyo.kind({
 	name: "kindSettingsView",
 	kind: "listViewDraggable",
 	className: "view jukieSettingsView",
 	height: "100%",
-	events: {onSaveSettings: "", onCloseSettings: "", onClearCache: ""},
+	events: {onSaveSettings: "", onCloseSettings: "", onClearCache: "", onGetCacheInfo: ""},
 
 	components: [
 		{name: "header", kind: "ctrlListViewHeader", strHeaderTitle: $L("Preferences"), boolShowSearchBtn: false},
@@ -94,8 +104,8 @@ enyo.kind({
 					{className: "jukieBoxSection", components: [
 						{content: $L("Playback"), className: "jukieBoxSectionCaption"},
 						{layoutKind: "HFlexLayout", align: "center", className: "jukieSettingsRow", components: [
-							{content: $L("Cache downloads on device"), className: "jukieSettingsLabel", flex: 1},
-							{name: "togCache", kind: "ToggleButton", onLabel: $L("On"), offLabel: $L("Off"), state: true}
+							{content: $L("Cache size"), className: "jukieSettingsLabel", flex: 1},
+							{name: "selCacheSize", kind: "ListSelector", value: 512, items: JUKIE_CACHE_SIZES}
 						]},
 						{layoutKind: "HFlexLayout", align: "center", className: "jukieSettingsRow", components: [
 							{content: $L("Stream quality"), className: "jukieSettingsLabel", flex: 1},
@@ -112,7 +122,9 @@ enyo.kind({
 							{content: $L("Downloaded tracks"), className: "jukieSettingsLabel", flex: 1},
 							{name: "btnClearCache", kind: "Button", caption: $L("Clear Cache"), onclick: "onclick_ClearCache"}
 						]},
-						{name: "lblClearCacheResult", className: "jukieSettingsNote", content: ""}
+						{name: "lblClearCacheResult", className: "jukieSettingsNote", content: ""},
+							{name: "lblCacheUsage", className: "jukieSettingsNote", content: ""},
+							{className: "jukieSettingsNote", content: $L("Songs you save for offline play are kept no matter what the cache size is, and Clear Cache leaves them alone.")}
 					]}
 				]}
 			]}
@@ -134,9 +146,40 @@ enyo.kind({
 		this.$.inDevToken.setValue(s.developerToken || "");
 		this.$.inUserToken.setValue(s.musicUserToken || "");
 		this.$.selStorefront.setValue(s.storefront || "us");
-		this.$.togCache.setState(s.cacheEnabled !== false);
+		var limit = (typeof s.cacheLimitMB === "number") ? s.cacheLimitMB : 512;
+		var sizes = JUKIE_CACHE_SIZES.slice(), i, found = false;
+		for (i = 0; i < sizes.length; i++) { if (sizes[i].value === limit) { found = true; } }
+		if (!found)
+		{
+			// A limit set some other way (e.g. luna-send) still shows up as itself.
+			sizes.push({caption: limit + " MB", value: limit});
+		}
+		this.$.selCacheSize.setItems(sizes);
+		this.$.selCacheSize.setValue(limit);
 		this.$.selQuality.setValue(s.streamQuality || "high");
 		this.$.lblClearCacheResult.setContent("");
+		this.refreshCacheUsage();
+	},
+
+	_fmtBytes: function (b)
+	{
+		var mb = (b || 0) / 1048576;
+		if (mb >= 1024) { return (Math.round(mb / 102.4) / 10) + " GB"; }
+		return (mb < 10 ? Math.round(mb * 10) / 10 : Math.round(mb)) + " MB";
+	},
+
+	// "In use: 312 MB - Saved offline: 2 songs (15 MB)", straight from the service's files.
+	refreshCacheUsage: function ()
+	{
+		var self = this;
+		this.$.lblCacheUsage.setContent("");
+		this.doGetCacheInfo(function (r)
+		{
+			if (!r || r.returnValue === false) { return; }
+			var n = r.pinnedCount || 0;
+			self.$.lblCacheUsage.setContent($L("In use: ") + self._fmtBytes(r.usedBytes) + " · " +
+				$L("Saved offline: ") + n + (n === 1 ? $L(" song") : $L(" songs")) + " (" + self._fmtBytes(r.pinnedBytes) + ")");
+		});
 	},
 
 	getValues: function () {
@@ -144,7 +187,7 @@ enyo.kind({
 			developerToken: this._trim(this.$.inDevToken.getValue()),
 			musicUserToken: this._trim(this.$.inUserToken.getValue()),
 			storefront: this.$.selStorefront.getValue() || "us",
-			cacheEnabled: !!this.$.togCache.getState(),
+			cacheLimitMB: this.$.selCacheSize.getValue(),
 			streamQuality: this.$.selQuality.getValue() || "high"
 		};
 	},

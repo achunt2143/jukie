@@ -30,7 +30,7 @@ enyo.kind({
 	drawHeader: function()
 	{
 		
-		this.$.lblHeaderTitle.setContent(this.strHeaderTitle);
+		JukieEmoji.setContent(this.$.lblHeaderTitle, this.strHeaderTitle);
 		if(this.intHeaderCount >= 0)
 		{
 			this.$.lblSongTitleCount.setContent("(" + this.intHeaderCount + ")");

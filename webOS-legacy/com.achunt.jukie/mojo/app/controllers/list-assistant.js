@@ -45,6 +45,7 @@ JukieListAssistant.prototype = {
 
 	setup: function () {
 		this.controller.get("list-title").update((this.title || "").escapeHTML());
+		Jukie.setupBack(this.controller);
 
 		// This device's List widget (palmInitFramework2112, an older/differently-built
 		// "mojo" than the SDK's docs/samples describe - see javascripts/list in
@@ -60,7 +61,10 @@ JukieListAssistant.prototype = {
 		var widgetAttrs = {
 			templates: { item: this.itemTemplate },
 			dataSource: new Mojo.DataSource(this.listAssistant),
-			swipeToDelete: false,
+			swipeToDelete: !!this.swipeToDelete,
+			// Swipe leaves a Delete / Undo pair instead of deleting at once - removing a saved
+			// song throws its audio away, so an accidental swipe should be recoverable.
+			autoconfirmDelete: false,
 			reorderable: false
 		};
 		if (this.dividers) { widgetAttrs.dividers = this.dividers; }
@@ -68,6 +72,15 @@ JukieListAssistant.prototype = {
 
 		this.tapHandler = this.onListTap.bindAsEventListener(this);
 		this.controller.get("scenelist").observe(Mojo.Event.listTap, this.tapHandler);
+		if (this.swipeToDelete) {
+			this.deleteHandler = this.onListDelete.bindAsEventListener(this);
+			this.controller.get("scenelist").observe(Mojo.Event.listDelete, this.deleteHandler);
+		}
+		this.holdHandler = this.onListHold.bindAsEventListener(this);
+		this.controller.get("scenelist").observe(Mojo.Event.hold, this.holdHandler);
+		// Rows that show offline state (usesOfflineState) repaint when it changes.
+		this.offlineWatcher = this.onOfflineChanged.bind(this);
+		Jukie.watchOffline(this.offlineWatcher);
 
 		this._filterText = "";
 		this.filterModel = { value: "" };
@@ -117,7 +130,7 @@ JukieListAssistant.prototype = {
 			self.applyFilter(self._filterText);
 		}).catch(function (err) {
 			Mojo.Log.error("[JukieList] load failed: " + err);
-			self.setStatus("Couldn't load this list.");
+			self.setStatus(Jukie.online ? "Couldn't load this list." : "You're offline. This list needs an internet connection.");
 		});
 	},
 
@@ -153,6 +166,7 @@ JukieListAssistant.prototype = {
 	},
 
 	onListTap: function (event) {
+		if (this._holdAt && Date.now() - this._holdAt < 700) { return; }
 		var item = event.item;
 		if (!item || typeof item._idx !== "number") { return; }
 		var rec = this._records[item._idx];
@@ -161,7 +175,70 @@ JukieListAssistant.prototype = {
 		if (rec) { this.handleTap(rec, item._idx); }
 	},
 
+	// Swipe-to-delete (scenes that set swipeToDelete = true and define deleteRecord(rec)):
+	// the framework has already slid the row away and the user confirmed with Delete. The
+	// rows come from our own data source, not the widget's model, so we do the removal
+	// ourselves - preventDefault() stops the widget editing its (empty) model.items - and
+	// drop the record locally first so the repaint that follows doesn't bring the row back.
+	onListDelete: function (event) {
+		event.preventDefault();
+		var item = event.item;
+		var idx = item && item._idx;
+		var rec = typeof idx === "number" && this._records && this._records[idx];
+		if (!rec) { return; }
+		this._records.splice(idx, 1);
+		this.deleteRecord(rec);
+	},
+
+	// Tap-and-hold on a row: a scene that defines holdActionsFor(rec) -> [{label, command}]
+	// gets a popup menu of those actions; onHoldChoice(command, rec) runs the pick.
+	onListHold: function (event) {
+		if (!this.holdActionsFor) { return; }
+		// Find the pressed row from the DOM: each row carries its record index in data-idx
+		// (media-row.html). The list widget's own getItemByNode doesn't exist in the older
+		// framework build Lunacy ships (palmInitFramework2205).
+		// Plain DOM walk rather than Prototype's up(): the framework element helpers behaved
+		// differently across builds, and this only needs className + getAttribute.
+		var rowEl = event.target, chain = [];
+		while (rowEl && rowEl.nodeType === 1) {
+			chain.push(rowEl.className || rowEl.tagName);
+			if ((" " + rowEl.className + " ").indexOf(" jukie-row ") !== -1) { break; }
+			rowEl = rowEl.parentNode;
+		}
+		if (!rowEl || rowEl.nodeType !== 1) { rowEl = null; }
+		var idx = rowEl ? parseInt(rowEl.getAttribute("data-idx"), 10) : NaN;
+		if (isNaN(idx)) {
+			Mojo.Log.error("[JukieList] hold: no list row found above " + chain.join(" < "));
+			return;
+		}
+		var rec = (this._records || [])[idx];
+		var actions = rec && this.holdActionsFor(rec);
+		if (!actions || !actions.length) { return; }
+		event.stop();
+		// Letting go after a hold can still arrive as a tap; don't let that start playback.
+		this._holdAt = Date.now();
+		var self = this;
+		try {
+			this.controller.popupSubmenu({
+				items: actions,
+				placeNear: event.target,
+				onChoose: function (command) { if (command) { self.onHoldChoice(command, rec); } }
+			});
+		} catch (e) {
+			Mojo.Log.error("[JukieList] popupSubmenu failed: " + e);
+		}
+	},
+
+	onOfflineChanged: function () {
+		if (this.usesOfflineState && this._records) { this.applyFilter(this._filterText); }
+	},
+
 	cleanup: function () {
+		Jukie.unwatchOffline(this.offlineWatcher);
+		if (this.deleteHandler) {
+			this.controller.get("scenelist").stopObserving(Mojo.Event.listDelete, this.deleteHandler);
+		}
+		this.controller.get("scenelist").stopObserving(Mojo.Event.hold, this.holdHandler);
 		this.controller.get("scenelist").stopObserving(Mojo.Event.listTap, this.tapHandler);
 		this.controller.get("list-filter-field").stopObserving(Mojo.Event.propertyChange, this.filterChangeHandler);
 		this.controller.stopListening("list-search-btn", Mojo.Event.tap, this.searchBtnHandler);
@@ -171,6 +248,7 @@ JukieListAssistant.prototype = {
 	fetchRows: function () { return Promise.resolve([]); },
 	toRow: function (rec) { return { primary: "", secondary: "", thumb: "" }; },
 	handleTap: function (rec) { },
+	deleteRecord: function (rec) { },
 
 	// A-Z group key for a row's display text - mirrors Palm's own Music Player app's
 	// Util.getAlphaGroup: first letter uppercased, digits collapse to a single "#" group.

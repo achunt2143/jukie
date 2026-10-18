@@ -94,6 +94,38 @@ enyo.kind(
 		this.$.AudioPlayer.clearCache(callback);
 	},
 
+	// ---- cache size + saved-for-offline songs (thin pass-throughs to the service) ----
+
+	setOfflineOnly: function (offlineOnly) { this.$.AudioPlayer.setOfflineOnly(offlineOnly); },
+	setCacheLimit: function (mb, callback) { this.$.AudioPlayer.setCacheLimit(mb, callback); },
+	getCacheInfo: function (callback) { this.$.AudioPlayer.getCacheInfo(callback); },
+	listOffline: function (callback) { this.$.AudioPlayer.listOffline(callback); },
+	getOfflineStatus: function (callback) { this.$.AudioPlayer.getOfflineStatus(callback); },
+	pinSong: function (item, callback) { this.$.AudioPlayer.pinSong(item, callback); },
+	unpinSong: function (songId, callback) { this.$.AudioPlayer.unpinSong(songId, callback); },
+
+	// With no network only tracks already on the device can play, so next/prev/auto-advance
+	// step over the rest instead of failing on each one. Counts against the same error budget
+	// as real playback errors (reset when something actually plays), so a list with nothing
+	// playable can't loop forever under repeat-all. Returns true if it skipped.
+	_skipUnavailableOffline: function (item)
+	{
+		if (!item || !item.id || JukieOffline.isPlayable(item.id))
+		{
+			return false;
+		}
+		if (this.intErrorCount >= this.INT_ERROR_MAX)
+		{
+			this.log("Nothing left to play offline, stopping");
+			this.doTrackPausePlay(false);
+			return true;
+		}
+		this.intErrorCount++;
+		this.log("Offline and not on the device, skipping:", item.title);
+		this.nextTrack(true, true);
+		return true;
+	},
+
 	pausePlayback: function (boolForcePause)
 	{
 		if (this.boolSuspendPlayback)
@@ -166,6 +198,10 @@ enyo.kind(
 		{
 			this.log("Item not playable (no id or preview), skipping:", item.title);
 			this.nextTrack(true, true);
+			return;
+		}
+		if (this._skipUnavailableOffline(item))
+		{
 			return;
 		}
 

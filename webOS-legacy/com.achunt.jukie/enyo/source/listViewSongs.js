@@ -29,7 +29,8 @@ enyo.kind({
 						{kind: "Control", name: "songPlaying", className: "column song_genre_Blueicon", showing: true},
 						{name: "songTitle", flex: 2, className: "column title"},
 						{name: "songArtist", flex: 1, className: "column artist"},
-						{name: "songAlbum", flex: 1, className: "column album"}
+						{name: "songAlbum", flex: 1, className: "column album"},
+						{name: "songOffline", kind: "Control", className: "column offlineBadge", onclick: "onclick_offlineBadge"}
 					]}
 				]},
 				{name: "alphaPicker", kind: "AlphaPicker", onAlphaPicked: "onAlphaPicked_AlphaPicker"}
@@ -380,9 +381,11 @@ enyo.kind({
 
 					//this.$.songNumber.content = intIndex + 1;
 					//this.$.songNumber.setStyle("width: " + (this.arSongs.length+'').length * 0.8 + "em");
-					this.$.songArtist.content = this.arSongs[intIndex].artist;
-					this.$.songTitle.content = this.arSongs[intIndex].title;
-					this.$.songAlbum.content = this.arSongs[intIndex].album;
+					// JukieEmoji: escaped HTML with emoji drawn as images where the device can
+					// (flyweight rows take .content directly, so the patch's setContent hook never sees it).
+					JukieEmoji.rowContent(this.$.songArtist, this.arSongs[intIndex].artist);
+					JukieEmoji.rowContent(this.$.songTitle, this.arSongs[intIndex].title);
+					JukieEmoji.rowContent(this.$.songAlbum, this.arSongs[intIndex].album);
 
 					// Alphadivider header - _alphaLabel is precomputed ONCE per song in
 					// _buildAlphaJumps, NOT recalculated here (this runs on every row recycle
@@ -401,6 +404,7 @@ enyo.kind({
 
 					//if (this.arSongs[intIndex].origIndex === this.intCurrTrackOrigIndex) Discontinued use of origIndex to match for highlight
 					this.setPlayingStyles(this.arSongs[intIndex]._id, this.$.itemMedia, this._strListQuery);
+					this.paintOfflineRow(this.arSongs[intIndex], this.$.itemMedia, this.$.songOffline);
 
 					this.$.itemMedia.addRemoveClass("odd", (intIndex % 2 === 0 ));
 					//this.log("finshed");
@@ -487,6 +491,11 @@ enyo.kind({
 			this.log(intClickIndex);
 
 			var objSong = this.arSongs[intClickIndex];
+
+			if (this.blockIfUnavailable(objSong))
+			{
+				return;
+			}
 
 			var objSetPlaybackList = {arThumbnails: objSong.arThumbnails,
 										arSetPlaybackList: this.arSongs,

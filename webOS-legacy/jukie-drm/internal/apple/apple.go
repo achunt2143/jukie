@@ -19,10 +19,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/achunt/jukie-drm/internal/emojienc"
 )
 
 const (
@@ -324,7 +327,25 @@ func (c *Client) APIGet(pathOrURL string) ([]byte, int, error) {
 	if err != nil {
 		return nil, resp.StatusCode, err
 	}
-	return stripAstral(b), resp.StatusCode, nil
+	return sanitizeBody(b), resp.StatusCode, nil
+}
+
+// emojiModeEnv selects how astral characters in an API body are made safe for the Luna
+// bus. Unset (or anything but "encode") strips them, which is what every caller did
+// before and what a device that cannot draw emoji wants. "encode" replaces each with a
+// reversible ASCII marker (see package emojienc) for a caller that will turn the markers
+// back into emoji - or drop them - itself, so devices that CAN draw emoji keep them.
+// The service asks for it with `jukie-drm -api <path> -emoji encode`, which main sets as
+// this variable (it was tried as an environment variable from the service first, but the
+// service's jail did not reliably deliver it; the service also retries without the flag for
+// an older binary that rejects it).
+const emojiModeEnv = "JUKIE_EMOJI"
+
+func sanitizeBody(b []byte) []byte {
+	if os.Getenv(emojiModeEnv) == "encode" {
+		return emojienc.EncodeJSON(b)
+	}
+	return stripAstral(b)
 }
 
 // stripAstral removes Unicode codepoints outside the Basic Multilingual Plane

@@ -58,9 +58,9 @@ enyo.kind({
 
 	setupObj: function () {
 		var artUrl = this._artUrl();
-		this.$.lblSongTitle.setContent(this.strSongTitle);
-		this.$.lblArtistName.setContent(this.strArtistName);
-		this.$.lblAlbumName.setContent(this.strAlbumName);
+		JukieEmoji.setContent(this.$.lblSongTitle, this.strSongTitle);
+		JukieEmoji.setContent(this.$.lblArtistName, this.strArtistName);
+		JukieEmoji.setContent(this.$.lblAlbumName, this.strAlbumName);
 		this.log("**** ", artUrl);
 
 		if (this.boolShow) {

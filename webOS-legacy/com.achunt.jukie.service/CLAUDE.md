@@ -159,7 +159,90 @@ re-add an npm-style `package.json`; it's a common mistake.)
 | `seek`       | `{ seconds }`                    | same                                                        |
 | `setVolume`  | `{ volume }` (0-100)              | same                                                        |
 | `getVolume`  | —                                | `{ returnValue, volume }`                                   |
-| `clearCache` | —                                | `{ returnValue, removed, freedBytes }`                      |
+| `clearCache` | —                                | `{ returnValue, removed, freedBytes }` (keeps the playing track and saved songs) |
+| `setCacheLimit` | `{ mb }` (0 = keep only the playing track) | `getCacheInfo`'s object, or `{ returnValue:false, error }` |
+| `getCacheInfo` | —                              | `{ returnValue, limitMB, usedBytes, count, pinnedBytes, pinnedCount }` |
+| `pinSong`    | `{ songId, libraryId, title, artist, album, artUrl }` | `{ returnValue, id, queued }` - saves for offline; downloads in the background if not cached |
+| `unpinSong`  | `{ songId }`                     | `{ returnValue, id }` - removes the saved song and its file |
+| `listOffline` | —                               | `{ available:[ids], pinned:[ids], missing:[ids], items:[saved-song records] }` |
+| `getOfflineStatus` | —                          | `{ active:id, queued:[ids], failed:[{id,error}] }` (background downloads) |
+| `prepareSong` | `{ songId, libraryId, offlineOnly }` | async: `{ returnValue, durationMs, title, artist }` once the track is in the cache, or `{ returnValue:false, error, permissionError?, superseded? }`. Fetch only - no playback (used on Lunacy). A newer call kills an older fetch still running (`superseded`). |
+
+`play` also takes `offlineOnly: true`: an uncached track then fails at once with
+`error: "not available offline"` instead of spawning jukie-drm and waiting out its network
+timeouts. The UIs send it whenever the connection manager says there is no network.
+
+## Lunacy (webOS on Android) - what works and what doesn't (2026-10-17)
+
+Verified on a Lunacy 0.8.0 phone (arm64): the service loads and dispatches commands under
+Lunacy's Node 12, and **library sync works** through `apiGet` -> a third helper build,
+`jukie-drm-android-arm64` (`../jukie-drm/build.ps1 jukie-drm -Target android-arm64`, picked
+when `process.arch === 'arm64'`). Two Lunacy specifics handled here:
+- Lunacy's installer drops every executable bit, so the service `chmod 755`s the chosen
+  binary at load (a no-op where chmod isn't allowed, e.g. TouchPad's cryptofs).
+- Android has no `/etc/resolv.conf`, so `jukie-drm` (`internal/dnsfix`) falls back to public
+  DNS servers when it's missing (a no-op on webOS, which has one).
+Also: spawning a missing helper (`pactl`, `/bin/sh` kill) emitted an unhandled `error` event
+that killed the service, so those use `spawnQuiet`.
+**Playback on Lunacy works (2026-10-17)**, but not through this service's player:
+`_playFile` needs gst-launch/pulse, which don't exist on Android. Instead the Mojo app calls
+**`prepareSong`** (below) - jukie-drm fetches + decrypts into the cache and the service
+reports `durationMs` - and the page plays the cached file itself through an `<audio>`
+element (`../com.achunt.jukie/mojo/app/models/playback-service.js`, "Lunacy" section, plus
+`adts.js`). The service never plays anything there; it stays a pure fetch/cache service.
+The cached file is raw ADTS AAC, which a browser can neither measure nor seek, so the page
+indexes the ADTS frames itself.
+
+## Emoji (astral characters) - never raw through this service (2026-10-17)
+
+Real emoji (anything needing a UTF-16 surrogate pair) cannot cross the Luna bus **through this
+service**: Node 0.4 + palmbus swallows the reply on a Pre2 and turns each half into a literal `?`
+on a TouchPad (verified: `T😀x` came back as `T??x`; BMP text like `é` is fine). db8
+is no better on the TouchPad - an emoji written there comes back as a single U+FFFD. So user text
+that touches this service or db8 is carried as the ASCII marker `{{e:1F970}}` (code point in hex),
+and the page turns it back into the emoji at render time only if the device can draw it
+(`JukieEmoji` in the Enyo and Mojo apps; the same marker as `jukie-drm/internal/emojienc`).
+
+- `encodeAstral()` (top of `JukieAudioService.js`) is applied to `pinSong` title/artist/album, the
+  saved-song records `listOffline` returns (`_safeRecord`), and `prepareSong`'s title/artist. The
+  apps also encode before sending (`JukieEmoji.encode`), because by the time a raw pair reaches
+  Node it may already be mangled.
+- `apiGet` takes `emoji: true` and then runs `jukie-drm -api <path> -emoji encode`, so Apple's
+  emoji come back as markers instead of being stripped. Default (no flag) is the old behaviour:
+  stripped. Only a UI that can draw emoji (or remove the markers itself) asks. A helper binary
+  built before the flag exists answers "flag provided but not defined"; `_apiRun` retries once
+  without it, so the worst case is stripping, never a failed request. (**Do not** switch this to an
+  environment variable: `JUKIE_EMOJI` passed through `cp.spawn`'s env, and even through a
+  `/bin/sh` wrapper, did not take effect from inside this service's jail - the same spawn worked
+  from a plain node on the device.)
+- Gotchas found on the way: this Node 0.4.12 has no `fs.existsSync` (use `statSync` in a
+  try/catch); and **the TouchPad's service runs `jukie-drm-webos2`, not `-webos3`**, because the
+  hardware-AAC probe fails in its jail - so a change to the helper must be in the `webos2` build
+  too (rebuilt with the patched toolchain, see `../jukie-drm/build.ps1`) or the TouchPad keeps
+  the old behaviour. As of 2026-10-17 `webos2` has NOT been rebuilt (it is the Pre2's known-good
+  binary, last built 2026-08-08, and nothing here needs it): the TouchPad and Pre2 therefore
+  still strip emoji in `apiGet`, which is correct for them today.
+
+## Track cache and saved-for-offline songs
+
+`JukieCache` / `JukiePrefetch` in `JukieAudioService.js`. Files live in
+`/media/internal/.jukie/cache/<songId>.m4a` (+ jukie-drm's `.m4a.json` sidecar); a track is
+**available offline** when both exist and are non-empty (that is exactly what jukie-drm's own
+"cache hit (offline)" short-circuit in `main.go` run() needs - it returns with no network call
+at all). State files next to the cache survive reinstalls, unlike db8 kinds:
+
+- `config.json` - `{cacheLimitMB, lastUsed:{id:ms}}`. The limit is size-based LRU over the
+  *unsaved* tracks; recency comes from `lastUsed` (set on every play), not file mtimes. The
+  current track is never evicted even when over the limit. Default 512 MB.
+- `offline.json` - the saved songs (`{songs:{id:{title,artist,...}}}`). Saved songs are never
+  evicted and don't count against the limit.
+
+`pinSong` on an uncached track queues it on `JukiePrefetch`: one jukie-drm at a time, and it
+waits while a play fetch is in flight. A failed download stays saved (listed under `missing`,
+with the error in `getOfflineStatus`); pin it again to retry. Stale `*.part` files and
+orphaned sidecars are swept on every eviction pass and at service start.
+Mojo: `Jukie.online` / `offlineIds` / `savedIds` in `app-assistant.js`; Enyo: `JukieOffline`
+(`enyo/utility/offline.js`).
 | `setCredentials` | `{ webDeveloperToken, musicUserToken }` (either optional) | `{ returnValue }` or `{ returnValue: false, error }` |
 
 `state` ∈ `idle | playing | paused | ended | error`. Calling `play` with the same URL/song while

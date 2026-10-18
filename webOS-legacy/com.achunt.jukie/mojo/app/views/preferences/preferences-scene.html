@@ -1,6 +1,7 @@
 <div class="palm-scene palm-dark palm-hasheader">
   <div class="palm-header left truncating-text">
     <div class="palm-header-wrapper">
+      <div id="back-btn" class="jukie-header-back" x-mojo-tap-highlight="momentary" style="display:none"></div>
       <div class="truncating-text" x-mojo-loc="">Preferences</div>
     </div>
   </div>
@@ -44,10 +45,15 @@
   <div class="palm-group jukie-group">
     <div class="palm-group-title"><span x-mojo-loc="">Cache</span></div>
     <div class="palm-list">
-      <div class="palm-row single last">
+      <div class="palm-row">
         <div class="palm-row-wrapper">
-          <div id="cacheToggle" x-mojo-element="ToggleButton"></div>
-          <div class="title left" x-mojo-loc="">Cache downloaded tracks</div>
+          <div class="jukie-field-label" x-mojo-loc="">Cache size</div>
+          <div id="cacheSize" x-mojo-element="ListSelector" class="jukie-selector"></div>
+        </div>
+      </div>
+      <div class="palm-row last">
+        <div class="palm-row-wrapper">
+          <div id="cacheUsage" class="jukie-field-label"></div>
         </div>
       </div>
     </div>

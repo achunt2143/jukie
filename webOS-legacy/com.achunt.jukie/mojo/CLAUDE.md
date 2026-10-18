@@ -140,6 +140,79 @@ rejected launcher grant previously took the app's own grant down with it too, br
 every library read with "db: permission denied". See
 `librarycache-service.js`'s `_grantLauncherReadBestEffort`.
 
+## Cache size, offline play, Lunacy adjustments (written 2026-10-17, NOT yet tested on a device)
+
+Everything in this section was written and syntax-checked but never run on hardware - treat
+it as unverified until a real Pre2 / Lunacy phone pass.
+
+- **Cache size** (`preferences-*`): a "Cache size" selector replaces the old (dead) cache
+  toggle; value is `cacheLimitMB` in the prefs record, pushed to the service with
+  `setCacheLimit` at boot and on Save. The usage line comes from the service's `getCacheInfo`.
+- **Offline play**: `Jukie.online` (connection manager subscription, `navigator.onLine`
+  fallback), `Jukie.offlineIds` / `savedIds` (from the service's `listOffline`),
+  `Jukie.watchOffline(fn)` to repaint, `Jukie.saveOffline` / `removeOffline`,
+  `Jukie.offlineDecor(id)` for row classes. Song rows get a badge (filled red = saved, hollow
+  red = saved but still downloading/failed, hollow grey = cached only) and, when offline and
+  not on the device, are dimmed; tapping one shows an alert, and `Jukie.playAt/playNext/
+  playPrev` skip them. Press-and-hold a song row (`Mojo.Event.hold`, via the list widget's
+  `getItemByNode`) for Save / Remove; Now Playing's app menu does the same for the current
+  track; mainmenu's "Saved Offline" opens the songs scene with `{offline:true}`, built from
+  the service's manifest (so it also lists saved songs that aren't in the library).
+- **Badge art / swipe-to-remove (written 2026-10-17, NOT yet tried on the folded phone):** the
+  badge is the owner's sprite `images/toaster-icon-downloads.png` (32x64; top = cached grey,
+  bottom = saved red, pending = bottom dimmed), see `.jukie-offline-badge` in `jukie.css`. The
+  Saved Offline list (`args.offline`) sets `swipeToDelete` on the List widget
+  (`JukieListAssistant`: `swipeToDelete`/`autoconfirmDelete:false` = Delete/Undo pair, `onListDelete`
+  preventDefault()s the widget's own model edit, splices `_records`, calls `deleteRecord`;
+  `SongsAssistant.deleteRecord` -> `Jukie.removeOffline` then `load()`). Unverified against the
+  Lunacy/Pre2 framework builds' custom-dataSource List - check on a device; the hold menu's
+  "Remove from offline" remains as a fallback.
+- **Lunacy** (webOS on Android; no gesture area): **confirmed 2026-10-17 on a Lunacy 0.8.0
+  phone (Samsung SM-F966U1, Android 17, arm64) that the launch switcher already sends Lunacy
+  phones to THIS Mojo build** (so Lunacy's phone profile reports `platformVersionMajor < 3`;
+  the window is 411x904 CSS px at dpr 2.625). That also means `deviceInfo` can't identify
+  Lunacy, so `Jukie.detectLunacy()` asks Lunacy's own bus service
+  (`palm://org.webosarchive.lunacy/system/getEnvironment`) at boot; `Jukie.whenLunacy(fn)` /
+  `Jukie.isLunacy()` expose the answer, and it gates the header **back button** (`#back-btn`,
+  `Jukie.setupBack`, hidden on real Palm devices). Now Playing's seek bar track is fluid
+  (`.jukie-np-slider .palm-slider-background {width:auto}`) and the scene switches to a
+  stretched vertical layout above 500px of window height (`NowplayingAssistant.layout`).
+  **Verified on the phone:** library refresh, Songs list, back arrow, saved/cached badges and
+  the press-and-hold save menu, Now Playing layout/seek bar, and **playback** (below). To get
+  a build onto a Lunacy phone from Windows you need a *debuggable* Lunacy build (a release one
+  ignores `adb ... --es install`) - see memory `lunacy-bringup-status`.
+- **Lunacy playback** (`PlaybackService`'s `_wa*` methods + `app/models/adts.js`): there is
+  no gst/pulse on Android, so `play()` calls the service's `prepareSong` (jukie-drm fetches
+  and decrypts into the cache), reads the cached raw-ADTS file over XHR from
+  `/media/internal/.jukie/cache/<id>.m4a` (Lunacy serves that path on the app origin),
+  indexes its frames with `JukieAdts` (exact duration, any seek lands on a frame boundary),
+  and plays it from a Blob through an `<audio>`. Position = base + `currentTime`; a seek
+  swaps in a Blob starting at the target frame. Every state change is fed through
+  `onStatus()` as a synthesized service response, so scenes, auto-advance and the
+  callbacks are unchanged. Chosen at runtime by `Jukie.isLunacy()`; `play()` waits for the
+  boot-time probe (4s timeout) so the first tap can't pick the wrong backend. The browser
+  can refuse audio that doesn't start from a tap - that falls back to "paused" so the play
+  button (a gesture) works. Verified on the phone: play cached + uncached, pause/resume,
+  seek, auto-advance, and it keeps playing when the app is sent to the background (checked
+  for ~20s only). Exhibition mode has its own PlaybackService instance and does not see
+  this audio element.
+
+## Emoji (2026-10-17; written, NOT yet run on a Pre2 or Lunacy)
+
+`app/models/emoji.js` is `JukieEmoji`, a verbatim copy of `../enyo/utility/emoji.js` (see that
+build's CLAUDE.md and `../../com.achunt.jukie.service/CLAUDE.md` for why emoji are carried as the
+ASCII marker `{{e:1F970}}`). A stock Pre2 has no EmojiShim and cannot draw them, so there
+`JukieEmoji.text()` removes them - the same result as before, because `apiGet` still strips
+(only a device where `JukieEmoji.canRender()` asks for markers). `canRender()` is true when
+`EmojiShim` exists or a load-time canvas test finds the engine draws colour emoji (Lunacy's Android
+WebView should - **unverified, the phone was not connected**; the test itself was checked in
+desktop Edge). List rows (`toRow`), Now Playing, Exhibition and search results go through
+`JukieEmoji.text`; db8 writes and `pinSong` encode. Note the EmojiShim installer patches
+`/usr/palm/frameworks/mojo/mojo.js`, but this build loads `mojo2/mojo.js`, so on a patched Mojo
+device the shim's `Mojo.View.render` hook would not run here - and plain `text()` could not show
+its `<img>` anyway; a Mojo device with the patch would need an HTML sink. Not built (no such
+device).
+
 ## Missing vs. the Enyo app
 
 **Persistent dashboard/notification music controller.** The Enyo app has a Dashboard

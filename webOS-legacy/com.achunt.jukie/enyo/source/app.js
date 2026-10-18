@@ -12,6 +12,7 @@ enyo.kind({
 		{name: "psHeadsetStatus", kind: "PalmService", service: "palm://com.palm.keys/headset/", method: "status", onSuccess: "onSuccess_RequestHeadsetStatus", onFailure: "onFailure_RequestHeadsetStatus", subscribe: true},
 		{name: "psBroadcaster", kind: "PalmService", service: "palm://com.palm.service.mediabroadcast/", method: "registerBroadcaster", onSuccess: "onSuccess_SetBroadcaster", onFailure: "onFailure_SetBroadcaster", subscribe: true},
 		{name: "psUpdateBroadcaster", kind: "PalmService", service: "palm://com.palm.service.mediabroadcast/", method: "update", onSuccess: "onSuccess_SetBroadcaster", onFailure: "onFailure_SetBroadcaster"},
+		{name: "psConnection", kind: "PalmService", service: "palm://com.palm.connectionmanager/", method: "getStatus", subscribe: true, onSuccess: "onSuccess_Connection", onFailure: "onFailure_Connection"},
 
 		{name: "AppleMusicService", kind: "AppleMusicService", developerToken: window.APPLE_MUSIC_DEVELOPER_TOKEN || "", musicUserToken: window.APPLE_MUSIC_USER_TOKEN || "", storefront: "us", debug: false},
 		{name: "DB8", kind: "kindDB8"},
@@ -31,7 +32,7 @@ enyo.kind({
 						{name: "navPanel", width: "320px", className: "navigation", kind: "kindNavPanel", height: "100%", onClick_ListView: "onClick_ListView", onResetDetailView: "onResetDetailView", onClick_ExhibitionMode: "onClick_ExhibitionMode", onRequestPlaylists_NavPanel: "onRequestPlaylists", onClickPlaylist_NavPanel: "onClickPlaylist_NavPanel", onCreatePlaylist_NavPanel: "onCreatePlaylist_NavPanel", onDeletePlaylist_NavPanel: "onDeletePlaylist", onClick_NowPlaying: "onClick_NowPlaying", onClick_LibraryView: "onClick_LibraryView", onRefreshLibrary: "onRefreshLibrary_NavPanel"},
 						{name: "paneMainView", className: "view", flex: 1, kind: "Pane", onSelectView: "onSelectView_PaneMainView", transitionKind: "enyo.transitions.Simple", components: [
 							{name: "viewListViewSongs", flex: 1, components: [
-								{name: "listViewSongs", kind: "kindListViewSongs", flex: 1, onSetPlaybackList: "onSetPlaybackList", onRequestMedia: "onRequestMedia_ListView", onListChanged: "onUIListChanged", onListSorted: "onUIListSorted", onEnableControls: "onControlsEnabled", onAddToPlaylist: "onAddToPlaylist", onItemDrag: "onItemDrag", onItemShowAvatar: "onItemShowAvatar", onItemShowAvatarIcon: "onItemShowAvatarIcon", onRequestCurrTrackInfo: "onRequestCurrTrackInfo"}
+								{name: "listViewSongs", kind: "kindListViewSongs", flex: 1, onToggleOffline: "onToggleOffline_List", onSetPlaybackList: "onSetPlaybackList", onRequestMedia: "onRequestMedia_ListView", onListChanged: "onUIListChanged", onListSorted: "onUIListSorted", onEnableControls: "onControlsEnabled", onAddToPlaylist: "onAddToPlaylist", onItemDrag: "onItemDrag", onItemShowAvatar: "onItemShowAvatar", onItemShowAvatarIcon: "onItemShowAvatarIcon", onRequestCurrTrackInfo: "onRequestCurrTrackInfo"}
 							]},
 							{name: "viewListViewArtists", kind: "SlidingPane", multiView: false, multiViewMinWidth: 1100, flex: 1, components: [
 								{name: "sldListViewArtists", flex: 1, components: [
@@ -46,7 +47,7 @@ enyo.kind({
 									{name: "listViewAlbums", kind: "kindListViewAlbums", onSetPlaybackList: "onSetPlaybackList", onRequestMedia: "onRequestMedia_ListView", onSelectAlbum: "onSelectAlbumDetail", onRequestPlaylists: "onRequestPlaylists", onAddToPlaylist: "onAddToPlaylist", onItemDrag: "onItemDrag", onItemShowAvatar: "onItemShowAvatar", onItemShowAvatarIcon: "onItemShowAvatarIcon"}
 								]},
 								{name: "sldListViewAlbumDetail", edgeDragging: false, dragAnywhere: false, components: [
-									{name: "listViewAlbumDetail", kind: "kindListViewAlbumDetail", flex: 1, showing: true, onRequestMedia: "onRequestMedia_ListView", onListChanged: "onUIListChanged", onRequestCurrTrack: "onRequestCurrTrackInfo", onSetPlaybackList: "onSetPlaybackList", onAddToPlaylist: "onAddToPlaylist", onItemDrag: "onItemDrag", onItemShowAvatar: "onItemShowAvatar", onItemShowAvatarIcon: "onItemShowAvatarIcon"}
+									{name: "listViewAlbumDetail", kind: "kindListViewAlbumDetail", flex: 1, showing: true, onToggleOffline: "onToggleOffline_List", onRequestMedia: "onRequestMedia_ListView", onListChanged: "onUIListChanged", onRequestCurrTrack: "onRequestCurrTrackInfo", onSetPlaybackList: "onSetPlaybackList", onAddToPlaylist: "onAddToPlaylist", onItemDrag: "onItemDrag", onItemShowAvatar: "onItemShowAvatar", onItemShowAvatarIcon: "onItemShowAvatarIcon"}
 								]}
 							]},
 							{name: "viewListViewGenres", kind: "SlidingPane", multiView: false, multiViewMinWidth: 1100, components: [
@@ -60,8 +61,11 @@ enyo.kind({
 							{name: "viewListViewPlaylist", flex: 1, components: [
 								{name: "listViewPlaylist", kind: "kindListViewPlaylist", flex: 1, onSetPlaybackList: "onSetPlaybackList", onRequestMedia: "onRequestMedia_ListView", onRequestPlaylist: "onRequestPlaylists", onUpdatePlaylist: "onUpdatePlaylist", onDeletePlaylist: "onDeletePlaylist", onListChanged: "onUIListChanged", onListSorted: "onUIListSorted", onEditPlaylist: "onEditPlaylist", onRequestCurrTrack: "onRequestCurrTrackInfo", onAddToPlaylist: "onAddToPlaylist", onItemDrag: "onItemDrag", onItemShowAvatar: "onItemShowAvatar", onItemShowAvatarIcon: "onItemShowAvatarIcon"}
 							]},
+							{name: "viewListViewSaved", flex: 1, components: [
+								{name: "listViewSaved", kind: "kindListViewSaved", flex: 1, onToggleOffline: "onToggleOffline_List", onSetPlaybackList: "onSetPlaybackList"}
+							]},
 							{name: "viewSettings", flex: 1, components: [
-								{name: "settingsView", kind: "kindSettingsView", flex: 1, onSaveSettings: "onSaveSettings_View", onCloseSettings: "onCloseSettings_View", onClearCache: "onClearCache_View"}
+								{name: "settingsView", kind: "kindSettingsView", flex: 1, onSaveSettings: "onSaveSettings_View", onCloseSettings: "onCloseSettings_View", onClearCache: "onClearCache_View", onGetCacheInfo: "onGetCacheInfo_View"}
 							]},
 							{name: "viewHelp", flex: 1, components: [
 								{name: "helpView", kind: "kindHelpView", flex: 1, onCloseHelp: "onCloseHelp_View"}
@@ -139,6 +143,8 @@ enyo.kind({
 			this.log("launchParams: ", launchParams);
 			this.log("enyo.windowParamas: ", enyo.windowParams);
 
+			JukieLunacy.detect(); // is this Lunacy? decides the API route and the audio backend
+			this.log("emoji: " + JukieEmoji.describe()); // what this device can draw (EmojiShim patch / native / nothing)
 			this.injectAppleMusicDependencies();
 			this.RequestHeadsetStatus();
 			this.RequestAVRCPStatus();
@@ -274,6 +280,9 @@ enyo.kind({
 	_bootWithSettings: function (settings)
 	{
 		this.applySettings(settings, false);
+		// Online/offline + which tracks are on the device (see utility/offline.js).
+		this.$.psConnection.call({});
+		this.refreshOffline();
 		this.boolAppleMusicReady = this.appleMusicService.ready();
 		this.boolAppleMusicInitFailed = !this.boolAppleMusicReady;
 		this.finishInitialLoad();
@@ -315,6 +324,7 @@ enyo.kind({
 			musicUserToken: prev.musicUserToken || "",
 			storefront: prev.storefront || "us",
 			cacheEnabled: prev.cacheEnabled !== false,
+			cacheLimitMB: prev.cacheLimitMB,
 			streamQuality: prev.streamQuality || "high"
 		};
 		this.appSettings = merged;
@@ -356,6 +366,11 @@ enyo.kind({
 		if (settings.storefront)
 		{
 			this.appleMusicService.setStorefront(settings.storefront);
+		}
+		if (typeof settings.cacheLimitMB === "number")
+		{
+			// The service persists this and trims the track cache to it.
+			this.$.Playback.setCacheLimit(settings.cacheLimitMB);
 		}
 		if (boolResync)
 		{
@@ -463,7 +478,109 @@ enyo.kind({
 
 	onClearCache_View: function (sender, callback)
 	{
-		this.$.Playback.clearCache(callback);
+		var self = this;
+		this.$.Playback.clearCache(function (response)
+		{
+			self.refreshOffline(); // saved songs stay; the cached-only badges go away
+			if (callback) { callback(response); }
+		});
+	},
+
+	onGetCacheInfo_View: function (sender, callback)
+	{
+		this.$.Playback.getCacheInfo(callback);
+	},
+
+	// ---- connectivity + saved-for-offline songs (state lives in utility/offline.js) ----
+
+	onSuccess_Connection: function (sender, response)
+	{
+		if (response && typeof response.isInternetConnectionAvailable === "boolean")
+		{
+			this._setOnline(response.isInternetConnectionAvailable);
+		}
+	},
+
+	// No connection manager (or it refused): fall back to the browser's own flag.
+	onFailure_Connection: function ()
+	{
+		this._setOnline(window.navigator.onLine !== false);
+	},
+
+	_setOnline: function (online)
+	{
+		if (JukieOffline.setOnline(online))
+		{
+			this.log("online=" + online);
+			// Offline, the service fails an uncached track at once instead of waiting out timeouts.
+			this.$.Playback.setOfflineOnly(!online);
+			this._repaintOfflineRows();
+		}
+	},
+
+	// Pull which tracks play with no network from the service (the files on disk are the
+	// source of truth). Repaints only when something changed, so the 3s progress poll while
+	// a saved song downloads doesn't churn the list.
+	refreshOffline: function ()
+	{
+		var self = this;
+		this.$.Playback.listOffline(function (res)
+		{
+			if (!res || res.returnValue === false) { return; }
+			if (JukieOffline.setFromList(res)) { self._repaintOfflineRows(); }
+			if ((res.missing || []).length && !self._offlinePoll)
+			{
+				self._offlinePoll = setTimeout(function ()
+				{
+					self._offlinePoll = null;
+					self.$.Playback.getOfflineStatus(function (st)
+					{
+						if (st && (st.active || (st.queued || []).length)) { self.refreshOffline(); }
+					});
+				}, 3000);
+			}
+		});
+	},
+
+	_repaintOfflineRows: function ()
+	{
+		var views = ["listViewSongs", "listViewAlbumDetail", "listViewSaved"], i, v;
+		for (i = 0; i < views.length; i++)
+		{
+			v = this.$[views[i]];
+			if (v && v.hasNode && v.hasNode())
+			{
+				try { v.repaintOfflineRows(); } catch (err) { this.log("offline repaint failed:", err); }
+			}
+		}
+	},
+
+	// The badge at the end of a song row was tapped: save the song for offline play, or
+	// remove it. Optimistic - the badge flips at once, then the service's real state
+	// (downloading / failed) replaces it on the next refreshOffline().
+	onToggleOffline_List: function (sender, objSong)
+	{
+		var self = this;
+		if (!objSong || !objSong.id)
+		{
+			return;
+		}
+		if (JukieOffline.saved[objSong.id])
+		{
+			JukieOffline.markSaved(objSong.id, false);
+			this._repaintOfflineRows();
+			this.$.Playback.unpinSong(objSong.id, function () { self.refreshOffline(); });
+			return;
+		}
+		// Downloading needs a connection; a song already cached on the device doesn't.
+		if (!JukieOffline.online && !JukieOffline.ids[objSong.id])
+		{
+			enyo.windows.addBannerMessage($L("You're offline - connect to save this song"), "{}", "images/notification-small.png");
+			return;
+		}
+		JukieOffline.markSaved(objSong.id, true);
+		this._repaintOfflineRows();
+		this.$.Playback.pinSong(objSong, function () { self.refreshOffline(); });
 	},
 
 	finishInitialLoad: function ()
@@ -787,6 +904,8 @@ enyo.kind({
 	onTrackPlaying: function ()
 	{
 		this.log();
+		// A track that just started has been cached by now - pick that up for the row badges.
+		this.refreshOffline();
 		if (this.ListView && this.ListView.onTrackPlaying)
 		{
 			this.ListView.onTrackPlaying();
@@ -1572,6 +1691,11 @@ enyo.kind({
 	onRefreshLibrary_NavPanel: function ()
 	{
 		var self = this;
+		if (!JukieOffline.online)
+		{
+			enyo.windows.addBannerMessage($L("You're offline - refreshing the library needs a connection"), "{}", "images/notification-small.png");
+			return;
+		}
 		this.$.refreshScrim.show();
 		this.$.LibraryCache.sync().then(function ()
 		{
@@ -1669,7 +1793,10 @@ enyo.kind({
 		// KindAlbumArtView coverflow (480x480), not just the small row icon.
 		var artUrl = this._libArt(rec.artworkUrl, mediaType === "song" ? 480 : 200);
 		if (mediaType === "song") {
-			return {id: rec.catalogId, title: rec.name, artist: rec.artistName, album: rec.albumName, durationMs: rec.durationMs, trackNumber: rec.trackNumber, artUrl: artUrl, libraryId: rec.libId, playable: !!rec.catalogId};
+			// arThumbnails: listViewSongs hands objSong.arThumbnails to the nav panel's
+			// now-playing strip; without it a song started from the library list showed the
+			// generic note instead of its cover.
+			return {id: rec.catalogId, title: rec.name, artist: rec.artistName, album: rec.albumName, durationMs: rec.durationMs, trackNumber: rec.trackNumber, artUrl: artUrl, arThumbnails: artUrl ? [{data: artUrl}] : [], libraryId: rec.libId, playable: !!rec.catalogId};
 		}
 		if (mediaType === "album") {
 			return {id: rec.catalogId, name: rec.name, artist: rec.artistName, artUrl: artUrl, trackCount: rec.trackCount, libraryId: rec.libId};
@@ -1826,6 +1953,7 @@ enyo.kind({
 		this.$.listViewArtists.boolViewActive = false;
 		this.$.listViewAlbums.boolViewActive = false;
 		this.$.listViewGenres.boolViewActive = false;
+		this.$.listViewSaved.boolViewActive = false;
 		if (objPrevView)
 		{
 			objPrevView.boolViewActive = false;

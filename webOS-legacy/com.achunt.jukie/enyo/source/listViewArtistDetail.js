@@ -106,7 +106,7 @@ enyo.kind({
 					this.$.headerAlbum.addClass("first");
 					this.$.headerAlbum.show();
 					this.$.header.show();
-					this.$.albumName.setContent(objSong.album);
+					JukieEmoji.setContent(this.$.albumName, objSong.album);
 					artUrl = this._trackArtUrl(objSong);
 					if (artUrl !== "") {
 						this.log("thumbnail: ", artUrl);

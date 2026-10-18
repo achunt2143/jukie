@@ -28,7 +28,8 @@ enyo.depends(
 	"source/listViewGenres.js",
 	"source/listViewGenreDetail.js",
 	"source/listViewPlaylist.js",
-	
+	"source/listViewSaved.js",
+
 	"source/albumartview.js",
 	"source/albumartitem.js",
 	
@@ -47,11 +48,15 @@ enyo.depends(
 	"utility/playbacksession.js",
 	"utility/librarycache.js",
 	"utility/settings.js",
+	"utility/offline.js",
+	"utility/emoji.js",
 	"utility/mediaindex.js",
 	"utility/librarytools.js",
 	"utility/playlistmanager.js",
 	"utility/webtoken.js",
 	"utility/applemusicservice.js",
+	"utility/lunacy.js",
+	"utility/adts.js",
 	"utility/audioplayer.js",
 	"utility/playback.js",
 	"utility/playbacklist.js",

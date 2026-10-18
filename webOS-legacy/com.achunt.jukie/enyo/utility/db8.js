@@ -68,7 +68,9 @@ enyo.kind({
 
 	// put: store an array of objects (each must carry _kind). Returns {results:[{id,rev}]}.
 	put: function (objects) {
-		return this._call(this.$.svcPut, {objects: objects});
+		// Emoji are stored as ASCII markers (JukieEmoji): a real one does not survive a db8
+		// write/read on the TouchPad - it comes back as a single U+FFFD.
+		return this._call(this.$.svcPut, {objects: JukieEmoji.encodeDeep(objects)});
 	},
 
 	// find: query is {from:"<kind>", where:[...], orderBy:"<index>", limit:N, page:"..."}.
@@ -82,7 +84,7 @@ enyo.kind({
 	},
 
 	merge: function (query, props) {
-		return this._call(this.$.svcMerge, {query: query, props: props});
+		return this._call(this.$.svcMerge, {query: query, props: JukieEmoji.encodeDeep(props)});
 	},
 
 	// Register a kind schema (idempotent - putKind updates if it exists).

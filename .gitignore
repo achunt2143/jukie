@@ -13,12 +13,14 @@ dev-stuff/
 webOS-legacy/com.achunt.jukie.service/device.wvd
 webOS-legacy/com.achunt.jukie.service/secrets.local.json
 webOS-legacy/com.achunt.jukie.service/jukie-drm-webos2
+webOS-legacy/com.achunt.jukie.service/jukie-drm-android-arm64
 webOS-legacy/com.achunt.jukie.service/jukie-drm-webos3
 
 # Any *.local.* file, anywhere - this project's own convention for real secrets that must
 # stay on-device only (e.g. source/dev-token.local.js holds a real Apple developer token +
-# music user token; build-ignore already excludes *.local.js from the packaged .ipk, but
-# that has nothing to do with git - this is the actual git-side enforcement).
+# music user token). This is git-side enforcement only - palm-package ignores .gitignore
+# and build-ignore; deploy-jukie.ps1 excludes *.local.js at package time and runs
+# check-ipk-secrets.py on the finished .ipk.
 *.local.*
 
 # Claude Code local session settings (personal permission/command history, not project source)
@@ -27,3 +29,7 @@ webOS-legacy/com.achunt.jukie.service/jukie-drm-webos3
 # OS/editor cruft
 .DS_Store
 Thumbs.db
+
+# Python bytecode (from the packaging helper scripts)
+__pycache__/
+*.pyc

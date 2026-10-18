@@ -57,6 +57,11 @@ AppAssistant.prototype.bootstrap = function () {
 		// The pasted tokens have to reach jukie-drm (which reads a static secrets file
 		// next to itself) via the service - the app has no filesystem access of its own.
 		Jukie.playback.setCredentials(prefs.developerToken, prefs.musicUserToken);
+		// Cache size limit, and which tracks are available offline / whether we're online.
+		Jukie.playback.setCacheLimit(prefs.cacheLimitMB);
+		Jukie.detectLunacy();
+		Jukie.startConnectivity();
+		Jukie.refreshOffline();
 		// Token refresh is handled service-side by jukie-drm (this device's browser
 		// can't reach Apple over TLS) - see AppleMusicService.ensureDeveloperToken.
 		return Jukie.apple.ensureDeveloperToken(false);
@@ -94,6 +99,193 @@ Jukie.artUrl = function (url, px) {
 	          .replace(/^https:/, "http:");
 };
 
+// ---- Lunacy ---------------------------------------------------------------
+// Lunacy (webOS on Android) has no gesture area, so scenes need an on-screen back control.
+// Lunacy phones present a Pre3 identity whose platformVersionMajor is BELOW 3 (confirmed
+// 2026-10-17: the launch switcher, which sends major < 3 to this Mojo build, put a Lunacy
+// 0.8.0 phone here), so deviceInfo can't tell Lunacy from a real Pre3/Pre2. Instead ask
+// Lunacy itself: its own bus service exists only there. The answer arrives asynchronously;
+// whenLunacy(fn) runs fn(isLunacy) once it is known (immediately if it already is).
+Jukie._lunacy = undefined;
+Jukie._lunacyWaiters = [];
+
+Jukie.detectLunacy = function () {
+	if (Jukie._lunacyAsked) { return; }
+	Jukie._lunacyAsked = true;
+	var settled = false;
+	function settle(isLunacy) {
+		if (settled) { return; }
+		settled = true;
+		Jukie._lunacy = isLunacy;
+		var ws = Jukie._lunacyWaiters.splice(0, Jukie._lunacyWaiters.length), i;
+		for (i = 0; i < ws.length; i++) {
+			try { ws[i](isLunacy); } catch (e) { Mojo.Log.error("[Jukie] lunacy waiter failed: " + e); }
+		}
+	}
+	try {
+		new Mojo.Service.Request("palm://org.webosarchive.lunacy/system", {
+			method: "getEnvironment",
+			parameters: {},
+			onSuccess: function () { Mojo.Log.info("[Jukie] running on Lunacy"); settle(true); },
+			onFailure: function () { settle(false); }
+		});
+	} catch (e) {
+		settle(false);
+	}
+	// Anything waiting on this (the first play) must never hang on a device whose bus never
+	// answers, so give up after a few seconds and treat it as "not Lunacy".
+	setTimeout(function () { settle(false); }, 4000);
+};
+
+Jukie.isLunacy = function () { return Jukie._lunacy === true; };
+
+Jukie.whenLunacy = function (fn) {
+	if (Jukie._lunacy !== undefined) { fn(Jukie._lunacy); return; }
+	Jukie._lunacyWaiters.push(fn);
+	Jukie.detectLunacy();
+};
+
+// Show the header's #back-btn and make it pop the scene. A no-op on real Palm devices,
+// whose gesture area already provides back. Call from setup() of every non-root scene
+// that has a #back-btn in its header.
+Jukie.setupBack = function (controller) {
+	var btn = controller.get("back-btn");
+	if (!btn) { return; }
+	Jukie.whenLunacy(function (isLunacy) {
+		if (!isLunacy) { return; }
+		btn.style.display = "block";
+		controller.listen(btn, Mojo.Event.tap, function () {
+			if (controller.stageController.getScenes().length > 1) { controller.stageController.popScene(); }
+		});
+	});
+};
+
+// ---- connectivity + offline availability -----------------------------------
+// Jukie.online follows the connection manager. offlineIds / savedIds are catalogId sets
+// refreshed from the service (the files on disk are the source of truth): offlineIds = every
+// track that plays with no network (cached or saved), savedIds = the ones the user chose to
+// keep. Scenes call Jukie.watchOffline(fn) to repaint when any of it actually changes.
+Jukie.online = true;      // assume online until the connection manager says otherwise
+Jukie.offlineIds = {};
+Jukie.savedIds = {};
+Jukie.offlineItems = [];  // saved-song metadata (feeds the "Saved Offline" list)
+Jukie._offlineWatchers = [];
+Jukie._offlineSig = "";
+
+Jukie.watchOffline = function (fn) { Jukie._offlineWatchers.push(fn); };
+Jukie.unwatchOffline = function (fn) {
+	var i;
+	for (i = Jukie._offlineWatchers.length - 1; i >= 0; i--) {
+		if (Jukie._offlineWatchers[i] === fn) { Jukie._offlineWatchers.splice(i, 1); }
+	}
+};
+Jukie._notifyOffline = function () {
+	var ws = Jukie._offlineWatchers.slice(), i;
+	for (i = 0; i < ws.length; i++) {
+		try { ws[i](); } catch (e) { Mojo.Log.error("[Jukie] offline watcher failed: " + e); }
+	}
+};
+
+Jukie.setOnline = function (online) {
+	online = !!online;
+	if (online === Jukie.online) { return; }
+	Jukie.online = online;
+	Mojo.Log.info("[Jukie] online=" + online);
+	Jukie._notifyOffline();
+};
+
+// Follow the connection manager (subscribed, so it keeps pushing changes). If that service
+// is unreachable, fall back to the browser's own online/offline flag.
+Jukie.startConnectivity = function () {
+	function fallback() {
+		Jukie.setOnline(window.navigator.onLine !== false);
+		window.addEventListener("online", function () { Jukie.setOnline(true); }, false);
+		window.addEventListener("offline", function () { Jukie.setOnline(false); }, false);
+	}
+	try {
+		Jukie._connRequest = new Mojo.Service.Request("palm://com.palm.connectionmanager", {
+			method: "getStatus",
+			parameters: { subscribe: true },
+			onSuccess: function (r) {
+				if (r && typeof r.isInternetConnectionAvailable === "boolean") { Jukie.setOnline(r.isInternetConnectionAvailable); }
+			},
+			onFailure: function () { if (!Jukie._connFallback) { Jukie._connFallback = true; fallback(); } }
+		});
+	} catch (e) {
+		Mojo.Log.error("[Jukie] connectivity watch failed: " + e);
+		fallback();
+	}
+};
+
+// Pull the offline sets from the service. Repaints watchers only when something changed, so
+// the 3s progress poll below doesn't make lists flicker or jump while a download runs.
+Jukie.refreshOffline = function (done) {
+	Jukie.playback.listOffline(function (res) {
+		if (!res || res.returnValue === false) { if (done) { done(false); } return; }
+		var avail = {}, saved = {}, i;
+		for (i = 0; i < (res.available || []).length; i++) { avail[res.available[i]] = true; }
+		for (i = 0; i < (res.pinned || []).length; i++) { saved[res.pinned[i]] = true; }
+		var sig = (res.available || []).slice().sort().join(",") + "|" + (res.pinned || []).slice().sort().join(",");
+		Jukie.offlineIds = avail;
+		Jukie.savedIds = saved;
+		Jukie.offlineItems = res.items || [];
+		if (sig !== Jukie._offlineSig) {
+			Jukie._offlineSig = sig;
+			Jukie._notifyOffline();
+		}
+		// Keep polling while saved songs are still downloading.
+		if ((res.missing || []).length && !Jukie._offlinePoll) {
+			Jukie._offlinePoll = setTimeout(function () {
+				Jukie._offlinePoll = null;
+				Jukie.playback.getOfflineStatus(function (st) {
+					if (st && (st.active || (st.queued || []).length)) { Jukie.refreshOffline(); }
+				});
+			}, 3000);
+		}
+		if (done) { done(true); }
+	});
+};
+
+// Playable right now: has a catalog id, and either we're online or it's on the device.
+Jukie.isPlayable = function (rec) {
+	return !!(rec && rec.catalogId && (Jukie.online || Jukie.offlineIds[rec.catalogId]));
+};
+
+// CSS classes for a song row's offline state (see media-row.html / .jukie-offline-badge).
+Jukie.offlineDecor = function (catalogId) {
+	var avail = !!(catalogId && Jukie.offlineIds[catalogId]);
+	var saved = !!(catalogId && Jukie.savedIds[catalogId]);
+	return {
+		rowClass: (!Jukie.online && !avail) ? "is-unavailable" : "",
+		badgeClass: saved ? (avail ? "is-saved" : "is-pending") : (avail ? "is-cached" : "")
+	};
+};
+
+// track: {catalogId, libraryId, title, artist, album, artUrl}. Optimistic: the badge shows
+// at once, then the service's real state (downloading / failed) replaces it on refresh.
+Jukie.saveOffline = function (track, done) {
+	if (!track || !track.catalogId) { return; }
+	Jukie.savedIds[track.catalogId] = true;
+	Jukie._offlineSig = "";
+	Jukie._notifyOffline();
+	Jukie.playback.pinSong(track, function (res) {
+		Jukie.refreshOffline();
+		if (done) { done(res); }
+	});
+};
+
+Jukie.removeOffline = function (track, done) {
+	if (!track || !track.catalogId) { return; }
+	delete Jukie.savedIds[track.catalogId];
+	delete Jukie.offlineIds[track.catalogId];
+	Jukie._offlineSig = "";
+	Jukie._notifyOffline();
+	Jukie.playback.unpinSong(track.catalogId, function (res) {
+		Jukie.refreshOffline();
+		if (done) { done(res); }
+	});
+};
+
 // ---- play queue ----------------------------------------------------------
 // Set when a list row is tapped, so Now Playing's prev/next have something to move
 // through. `list` is the tapped scene's full record array (same descriptor shape
@@ -109,7 +301,8 @@ Jukie.setQueue = function (list, index) {
 Jukie.playAt = function (index, step) {
 	var q = Jukie.queue || [];
 	step = step || 1;
-	while (index >= 0 && index < q.length && !q[index].catalogId) { index += step; }
+	// Skip anything unplayable right now: no catalog id, or (offline) not on the device.
+	while (index >= 0 && index < q.length && !Jukie.isPlayable(q[index])) { index += step; }
 	if (index < 0 || index >= q.length) { return false; }
 	var rec = q[index];
 	Jukie.queueIndex = index;
@@ -303,6 +496,10 @@ AppAssistant.startLibrarySync = function (onDone, onProgress) {
 	}
 	if (!Jukie.apple.musicUserToken) {
 		if (onDone) { onDone(new Error("no Music User Token set - add one in Preferences")); }
+		return;
+	}
+	if (!Jukie.online) {
+		if (onDone) { onDone(new Error("You're offline. Refreshing the library needs an internet connection.")); }
 		return;
 	}
 	Jukie.syncing = true;

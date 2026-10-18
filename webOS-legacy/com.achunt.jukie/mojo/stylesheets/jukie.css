@@ -70,6 +70,31 @@
    the left edge; scenes that want it centred drop that class and use this. */
 .jukie-header-center { text-align: center; }
 
+/* Header back button (Lunacy only - hidden until Jukie.setupBack shows it): a CSS-drawn
+   chevron in a 44px-wide tap target, same approach as the other header glyphs. Floats
+   left so left-aligned titles flow beside it; .is-overlay (Now Playing, whose title is
+   centred) pins it to the left edge instead so the title doesn't shift. */
+.jukie-header-back {
+	float: left;
+	position: relative;
+	width: 44px;
+	height: 50px;
+	margin-right: 2px;
+}
+.jukie-header-back.is-overlay { position: absolute; left: 0; top: 0; margin: 0; }
+.jukie-header-back:before {
+	content: "";
+	position: absolute;
+	left: 18px;
+	top: 19px;
+	width: 11px;
+	height: 11px;
+	border-left: 3px solid #f2f2f2;
+	border-bottom: 3px solid #f2f2f2;
+	-webkit-transform: rotate(45deg);
+}
+.jukie-header-back:active { opacity: 0.45; }
+
 /* ---- status / empty ----------------------------------------------------- */
 /* Still used by every OTHER scene's own status line (albums/artists/playlists/songs/
    search/preferences/nowplaying) - only mainmenu's library-status switched to a native
@@ -192,6 +217,26 @@
 .jukie-media-primary { color: #ffffff; font-size: 16px; }
 .jukie-media-secondary { color: #9a9aa0; font-size: 13px; }
 
+/* Offline availability badge at the row's right end - the webOS download glyph from
+   images/toaster-icon-downloads.png (two 32x32 frames: grey arrow on top, red one below).
+   Hidden unless the row has one of the state classes:
+     is-saved   - red arrow: the user saved this song for offline play
+     is-pending - red arrow, dimmed: saved, still downloading (or the download failed)
+     is-cached  - grey arrow: not saved, but a copy is on the device so it plays offline */
+.jukie-offline-badge {
+	display: none;
+	-webkit-box-flex: 0;
+	width: 32px;
+	height: 32px;
+	margin-left: 4px;
+	background: url(../images/toaster-icon-downloads.png) no-repeat 0 0;
+}
+.jukie-offline-badge.is-cached { display: block; }
+.jukie-offline-badge.is-saved { display: block; background-position: 0 -32px; }
+.jukie-offline-badge.is-pending { display: block; background-position: 0 -32px; opacity: 0.5; }
+/* Offline and this track isn't on the device: still listed, but dimmed. */
+.jukie-row.is-unavailable .jukie-media-row { opacity: 0.35; }
+
 /* Album-name group header (an artist's Songs list, grouped by album instead of A-Z) -
    plain divs, not the framework's .palm-divider.labeled table (that one squashes its
    label column down to a single character on this WebKit - see mainmenu's own history).
@@ -211,7 +256,13 @@
 /* Budget for a 320x480 card: 52 header + ~150 art + ~66 text + ~34 scrubber +
    ~56 controls + padding lands comfortably inside the screen, so the transport
    never needs scrolling to reach. */
-.jukie-np { padding: 10px 16px; text-align: center; }
+.jukie-np { padding: 10px 16px; text-align: center; -webkit-box-sizing: border-box; box-sizing: border-box; }
+/* Taller screens (nowplaying-assistant.js layout() adds .is-tall above 500px): the scene
+   becomes a vertical box at least as tall as the viewport and the spacers split the spare
+   height, so the content is not bunched at the top. Unused on 480px-class screens. */
+.jukie-np-flex { display: none; }
+.jukie-np.is-tall { display: -webkit-box; -webkit-box-orient: vertical; }
+.jukie-np.is-tall .jukie-np-flex { display: block; -webkit-box-flex: 1; }
 .jukie-np-art {
 	width: 150px;
 	height: 150px;
@@ -277,6 +328,12 @@
 	background-position: center center;
 }
 .jukie-np-slider .palm-slider-background {
+	/* Fluid: the framework's fixed 250px track becomes the container width minus these
+	   margins, so the 16px scene padding + 20px margin = the same 36px side gap as before
+	   at any screen width. */
+	width: auto;
+	margin-left: 20px;
+	margin-right: 20px;
 	border-width: 0;
 	-webkit-border-image: none;
 	background: url(../images/jukie-slider.png) left top repeat-x;

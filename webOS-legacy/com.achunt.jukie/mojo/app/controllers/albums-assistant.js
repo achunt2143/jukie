@@ -24,7 +24,7 @@ AlbumsAssistant.prototype.fetchRows = function () {
 
 AlbumsAssistant.prototype.toRow = function (rec) {
 	// Mojo's #{...} substitution escapes for us; escaping here too double-encodes.
-	return { primary: rec.name || "", secondary: rec.artistName || "", thumb: this.thumbUrl(rec.artworkUrl, 80) };
+	return { primary: JukieEmoji.text(rec.name || ""), secondary: JukieEmoji.text(rec.artistName || ""), thumb: this.thumbUrl(rec.artworkUrl, 80) };
 };
 
 AlbumsAssistant.prototype.handleTap = function (rec) {

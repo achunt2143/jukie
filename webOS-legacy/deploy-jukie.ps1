@@ -23,6 +23,11 @@
 #      them on the bus, and the registration files under /var/palm/ls2 are wiped on every
 #      reinstall. post-install-jukie.ps1 (re)creates them and restarts the service so new
 #      code loads.
+#   3. Keeping credentials out of the .ipk - palm-package doesn't honor .gitignore or
+#      enyo/build-ignore, so real-token *.local.js files get packaged unless excluded.
+#      The palm-package call excludes them, and check-ipk-secrets.py then verifies the
+#      finished .ipk (any *.local.* file fails the build; the service's blank
+#      secrets.local.json placeholder passes only while its token fields are empty).
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File deploy-jukie.ps1
 #         add  -NoPackage   to skip the rebuild/repackage and just reinstall + reregister
@@ -65,10 +70,25 @@ if (-not $NoPackage) {
         }
     }
 
-    Remove-Item -Force 'com.achunt.jukie_*_all.ipk' -ErrorAction SilentlyContinue
-    & palm-package.bat com.achunt.jukie com.achunt.jukie.service com.achunt.jukie.package
+    # Android arm64 build for Lunacy phones (64-bit-only chips can't run the 32-bit webOS builds).
+    Write-Host "==> Building jukie-drm (Android arm64, for Lunacy)..." -ForegroundColor Cyan
+    Push-Location jukie-drm
+    & powershell -ExecutionPolicy Bypass -File build.ps1 jukie-drm -Target android-arm64
+    $androidExit = $LASTEXITCODE
+    Pop-Location
+    if ($androidExit -ne 0) {
+        Write-Host "WARN: jukie-drm Android arm64 build failed - continuing without it. Lunacy phones won't get API/playback until it's built." -ForegroundColor Yellow
+    } else {
+        Copy-Item -Force 'jukie-drm\build\jukie-drm-android-arm64' "$svc\jukie-drm-android-arm64"
+        Write-Host "staged jukie-drm-android-arm64 (Lunacy/arm64 build) into the service dir" -ForegroundColor Cyan
+    }
 
-    $drmBins = @('jukie-drm-webos3', 'jukie-drm-webos2') | Where-Object { Test-Path "$svc\$_" }
+    Remove-Item -Force 'com.achunt.jukie_*_all.ipk' -ErrorAction SilentlyContinue
+    # --exclude: palm-package ignores .gitignore and enyo/build-ignore, so real-credential
+    # *.local.js files (enyo/source/dev-token.local.js) would otherwise ship in the .ipk.
+    & palm-package.bat '--exclude=*.local.js' com.achunt.jukie com.achunt.jukie.service com.achunt.jukie.package
+
+    $drmBins = @('jukie-drm-webos3', 'jukie-drm-webos2', 'jukie-drm-android-arm64') | Where-Object { Test-Path "$svc\$_" }
     if ($drmBins.Count -gt 0) {
         $ipkForFix = Get-ChildItem 'com.achunt.jukie_*_all.ipk' | Select-Object -First 1
         & python fix-ipk-exec.py $ipkForFix.Name @drmBins
@@ -77,6 +97,15 @@ if (-not $NoPackage) {
 }
 
 $ipk = Get-ChildItem 'com.achunt.jukie_*_all.ipk' | Select-Object -First 1
+
+# Backstop for the --exclude above (and for -NoPackage): refuse to install, and delete the
+# .ipk so it can't be shared by accident, if any *.local.* credential file is inside it.
+& python check-ipk-secrets.py $ipk.Name
+if ($LASTEXITCODE -ne 0) {
+    Remove-Item -Force $ipk.Name
+    throw "$($ipk.Name) contained local-only secret files and was deleted - see check-ipk-secrets output above"
+}
+
 & palm-install.bat $ipk.Name
 
 & powershell -ExecutionPolicy Bypass -File post-install-jukie.ps1
