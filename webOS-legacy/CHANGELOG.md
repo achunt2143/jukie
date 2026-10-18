@@ -2,6 +2,61 @@
 
 For the full feature rundown, see [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
+## v2.1.0
+
+### Added
+
+- **Offline play.** Press-and-hold a song (Mojo) or tap the download arrow at the end of a row
+  (Enyo) to save it on the device; saved songs are never evicted and play with no connection.
+  A "Saved Offline" list in both UIs shows them (swipe a row to remove it - Mojo's Delete/Undo,
+  Enyo's Cancel/Remove prompt), including saved songs that aren't in the synced library.
+  Songs already cached by playing them are marked too (grey arrow = cached, red = saved).
+  Offline, tracks that aren't on the device are dimmed, skipped by next/previous, and fail at
+  once ("Not available offline") instead of waiting out network timeouts. Connectivity comes
+  from the connection manager, with `navigator.onLine` as the fallback.
+- **Configurable cache size.** Settings has a "Cache size" selector (Off / 128 MB ... 8 GB,
+  default 512 MB) replacing the old no-op cache toggle, with a live usage readout. The cache is
+  now a size-based LRU (recency is real: every play touches it); the track in use and saved
+  songs are never evicted.
+- **Lunacy support** (webOS on Android): arm64 `jukie-drm` helper (`jukie-drm-android-arm64`) with a
+  public-DNS fallback for Android's missing `/etc/resolv.conf`; library sync through the service
+  for both UIs; playback through an HTML5 `<audio>` element fed from the decrypted cache file
+  (`prepareSong` + an ADTS frame index for exact duration and frame-accurate seeking, since a
+  browser can neither measure nor seek raw ADTS AAC). Mojo gets a header back button, a fluid
+  seek bar and a tall-screen Now Playing layout. Both UIs detect Lunacy by asking
+  `palm://org.webosarchive.lunacy/system/getEnvironment`, not by guessing from device info.
+- **Emoji support** (TouchPad, with the EmojiShim system patch installed). Emoji in playlist,
+  song, artist and album names now draw as images instead of tofu boxes. Everything is
+  capability-driven: the page uses `EmojiShim` if present, draws natively if a canvas test says
+  the engine can, and otherwise removes the emoji (what older devices always did). Emoji travel
+  through the service and db8 as a reversible ASCII marker `{{e:1F970}}`, because real emoji
+  are mangled by both on webOS (a Pre2's reply is swallowed; a TouchPad's becomes `??`/U+FFFD).
+  `jukie-drm` gains `-api <path> -emoji encode`; the service retries without it for an older
+  helper binary. **Refresh Library once after updating** to re-store existing records.
+- **WebOS-style badges.** The download indicator now uses the `toaster-icon-downloads` sprite.
+- `make-release-ipk.ps1` builds the publishable package (no `device.wvd`, blank
+  `secrets.local.json`), and `check-ipk-secrets.py --public` rejects any `.wvd`.
+
+### Fixed
+
+- **A packaged `.ipk` shipped real credentials.** `enyo/source/dev-token.local.js` (a real
+  developer token and Music User Token) was packaged because `palm-package` ignores
+  `.gitignore`/`build-ignore`; that is why a fresh install appeared to have a library with no
+  tokens entered. `deploy-jukie.ps1` now excludes `*.local.js` and runs `check-ipk-secrets.py`.
+- Now-playing strip showed a generic note instead of the cover for songs started from the
+  library list (Enyo) - `_libRecordToItem` now provides `arThumbnails`.
+- The Mojo main menu threw on a missing `library-status` element, which hid the
+  refresh-failed dialog.
+
+### Notes
+
+- Launch stalls on Lunacy (several seconds before the first db8 reply) reproduce with only
+  the Lunacy launcher running, i.e. they are Lunacy's own start-up, not the app.
+- The TouchPad's service currently runs the `jukie-drm-webos2` helper (its hardware-AAC probe
+  fails in the service jail), so a helper change must be in the webos2 build to reach it.
+  `webos2` was not rebuilt for 2.1.0 and still strips emoji in `apiGet`, which is correct for
+  the TouchPad (it calls Apple directly) and the Pre2.
+
 ## v2.0.0
 
 ### Added
