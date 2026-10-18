@@ -161,6 +161,10 @@ enyo.kind({
                     resolve(response.json);
                     return;
                 }
+                if (response && response.json && response.json.errors && response.json.errors[0] &&
+                    ("" + response.json.errors[0].status) === "403") {
+                    self._musicUserTokenMaybeRejected();
+                }
                 reject(new Error(self._apiError(response, url)));
             };
         }).catch(function (err) {
@@ -168,6 +172,15 @@ enyo.kind({
             self.emitSignal("onAppleMusicError", {error: err});
             throw err;
         });
+    },
+
+    // A 403 on a request that carried a Music User Token means Apple no longer accepts that
+    // sign-in (expired, revoked, or the subscription lapsed). Tell the app once so it can ask
+    // the user to sign in again; a 403 with no token sent is something else.
+    _musicUserTokenMaybeRejected: function () {
+        if (this.musicUserToken) {
+            this.emitSignal("onMusicUserTokenRejected");
+        }
     },
 
     onApiResult: function (sender, response, request) {
@@ -240,6 +253,9 @@ enyo.kind({
                 return self.ensureDeveloperToken(true).then(function () {
                     return self.request(path, params, true);
                 });
+            }
+            if (response.status === 403) {
+                self._musicUserTokenMaybeRejected();
             }
             if (!response.ok) {
                 throw new Error("Apple Music API request failed: " + response.status + " " + url);

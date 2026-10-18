@@ -7,20 +7,28 @@
   </div>
 
   <div class="palm-group jukie-group" style="margin-top:52px">
+    <div class="palm-group-title"><span x-mojo-loc="">Sign in</span></div>
+    <div class="palm-list">
+      <div class="palm-row single last">
+        <div class="palm-row-wrapper">
+          <div id="signedIn" class="jukie-field-label"></div>
+          <div class="jukie-btn-row"><div id="signInBtn" x-mojo-element="Button"></div></div>
+          <div id="signInPanel" class="jukie-signin-panel" style="display:none">
+            <div class="jukie-field-label">On a phone or computer, go to:</div>
+            <div id="signInUrl" class="jukie-signin-url"></div>
+            <div class="jukie-field-label">and enter this code:</div>
+            <div id="signInCode" class="jukie-signin-code"></div>
+            <div id="signInStatus" class="jukie-field-label"></div>
+            <div class="jukie-btn-row"><div id="signInCancelBtn" x-mojo-element="Button"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="palm-group jukie-group">
     <div class="palm-group-title"><span x-mojo-loc="">Apple Music</span></div>
     <div class="palm-list">
-      <div class="palm-row single">
-        <div class="palm-row-wrapper">
-          <div class="jukie-field-label" x-mojo-loc="">Developer Token</div>
-          <div id="devToken" x-mojo-element="TextField" class="jukie-field"></div>
-        </div>
-      </div>
-      <div class="palm-row">
-        <div class="palm-row-wrapper">
-          <div class="jukie-field-label" x-mojo-loc="">Music User Token</div>
-          <div id="musicToken" x-mojo-element="TextField" class="jukie-field"></div>
-        </div>
-      </div>
       <div class="palm-row last">
         <div class="palm-row-wrapper">
           <div class="jukie-field-label" x-mojo-loc="">Storefront</div>

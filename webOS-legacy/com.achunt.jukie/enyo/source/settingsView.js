@@ -80,6 +80,12 @@ enyo.kind({
 	events: {onSaveSettings: "", onCloseSettings: "", onClearCache: "", onGetCacheInfo: ""},
 
 	components: [
+		// Signs in through the webOS OAuth broker (apple_musickit flow, apps/applemusic on the
+		// broker): the device shows a code, the user finishes Apple's sign-in on a phone or
+		// computer, and the Music User Token comes back here. To try a local broker, set
+		// brokerBaseUrl on this component (the helper's default is https://oauth.wosa.link).
+		{kind: "Helpers.OAuthBroker", name: "broker", appName: "applemusic",
+			onCode: "showCode", onConnected: "storeTokens", onExpired: "codeExpired", onError: "brokerError"},
 		{name: "header", kind: "ctrlListViewHeader", strHeaderTitle: $L("Preferences"), boolShowSearchBtn: false},
 		{name: "content", kind: "Control", layoutKind: "VFlexLayout", className: "list", flex: 1, components: [
 			{name: "scroller", kind: "Scroller", flex: 1, components: [
@@ -87,14 +93,23 @@ enyo.kind({
 					{className: "jukieBoxSection", components: [
 						{content: $L("Account"), className: "jukieBoxSectionCaption"},
 						{layoutKind: "VFlexLayout", className: "jukieSettingsRow", components: [
-							{content: $L("Developer Token (JWT)"), className: "jukieSettingsLabel"},
-							{name: "inDevToken", kind: "Input", className: "jukieSettingsInput", hint: $L("Paste developer token"), autocorrect: false, spellcheck: false},
-							{content: $L("The web developer token expires about every 35 days."), className: "jukieSettingsHint"}
-						]},
-						{layoutKind: "VFlexLayout", className: "jukieSettingsRow", components: [
-							{content: $L("Music User Token"), className: "jukieSettingsLabel"},
-							{name: "inUserToken", kind: "Input", className: "jukieSettingsInput", hint: $L("Paste music-user token"), autocorrect: false, spellcheck: false},
-							{content: $L("Identifies your Apple Music account for library and full-track playback."), className: "jukieSettingsHint"}
+							{name: "lblSignedIn", className: "jukieSettingsLabel"},
+							{name: "btnSignIn", kind: "Button", caption: $L("Sign in with Apple Music"), className: "enyo-button-affirmative", onclick: "onclick_SignIn"},
+							{content: $L("You finish signing in on a phone or computer."), className: "jukieSettingsHint"},
+							{name: "signInPanel", showing: false, className: "jukieSignInPanel", components: [
+								{content: $L("On a phone or computer, go to:"), className: "jukieSettingsHint"},
+								{name: "signInUrl", className: "jukieSignInUrl"},
+								{content: $L("and enter this code:"), className: "jukieSettingsHint"},
+								{name: "signInCode", className: "jukieSignInCode"},
+								{content: $L("or scan to open it pre-filled:"), className: "jukieSettingsHint"},
+								{name: "signInQr", kind: "QrCode", size: 200, className: "jukieSignInQr"},
+								{name: "signInStatus", className: "jukieSettingsHint"},
+								{layoutKind: "HFlexLayout", pack: "center", components: [
+									{kind: "Button", caption: $L("Check now"), onclick: "onclick_SignInCheck"},
+									{kind: "Button", caption: $L("Cancel"), className: "enyo-button-negative", onclick: "onclick_SignInCancel"}
+								]}
+							]},
+							{name: "signInError", showing: false, className: "jukieSignInError"}
 						]},
 						{layoutKind: "HFlexLayout", align: "center", className: "jukieSettingsRow", components: [
 							{content: $L("Storefront"), className: "jukieSettingsLabel", flex: 1},
@@ -143,8 +158,10 @@ enyo.kind({
 	// Populate fields from a settings object (call before showing the view).
 	setValues: function (settings) {
 		var s = settings || {};
-		this.$.inDevToken.setValue(s.developerToken || "");
-		this.$.inUserToken.setValue(s.musicUserToken || "");
+		// The tokens are never shown or edited: they ride along here so Save writes them back.
+		this._developerToken = s.developerToken || "";
+		this._musicUserToken = s.musicUserToken || "";
+		this._showSignedIn();
 		this.$.selStorefront.setValue(s.storefront || "us");
 		var limit = (typeof s.cacheLimitMB === "number") ? s.cacheLimitMB : 512;
 		var sizes = JUKIE_CACHE_SIZES.slice(), i, found = false;
@@ -158,6 +175,8 @@ enyo.kind({
 		this.$.selCacheSize.setValue(limit);
 		this.$.selQuality.setValue(s.streamQuality || "high");
 		this.$.lblClearCacheResult.setContent("");
+		this._cancelSignIn();
+		this._showSignInError("");
 		this.refreshCacheUsage();
 	},
 
@@ -184,8 +203,8 @@ enyo.kind({
 
 	getValues: function () {
 		return {
-			developerToken: this._trim(this.$.inDevToken.getValue()),
-			musicUserToken: this._trim(this.$.inUserToken.getValue()),
+			developerToken: this._developerToken || "",
+			musicUserToken: this._musicUserToken || "",
 			storefront: this.$.selStorefront.getValue() || "us",
 			cacheLimitMB: this.$.selCacheSize.getValue(),
 			streamQuality: this.$.selQuality.getValue() || "high"
@@ -193,8 +212,91 @@ enyo.kind({
 	},
 
 	onclick_Back: function () {
+		this._cancelSignIn();
 		this.doCloseSettings();
 	},
+
+	//#region Sign in with Apple Music (via the OAuth broker)
+
+	onclick_SignIn: function () {
+		this._showSignInError("");
+		this.$.btnSignIn.setDisabled(true);
+		this.$.broker.start();
+	},
+
+	onclick_SignInCheck: function () {
+		this.$.signInStatus.setContent($L("Checking…"));
+		this.$.broker.checkNow();
+	},
+
+	onclick_SignInCancel: function () {
+		this._cancelSignIn();
+		this._showSignInError("");
+	},
+
+	_cancelSignIn: function () {
+		this.$.broker.stop();
+		this.$.signInPanel.setShowing(false);
+		this.$.btnSignIn.setDisabled(false);
+	},
+
+	_showSignedIn: function () {
+		this.$.lblSignedIn.setContent(this._musicUserToken ? $L("Signed in to Apple Music") : $L("Not signed in"));
+		this.$.btnSignIn.setCaption(this._musicUserToken ? $L("Sign in again") : $L("Sign in with Apple Music"));
+	},
+
+	_showSignInError: function (message) {
+		this.$.signInError.setContent(message || "");
+		this.$.signInError.setShowing(!!message);
+	},
+
+	// onCode: the broker minted a code and began polling in the background.
+	showCode: function (sender, info) {
+		this.$.signInUrl.setContent(info.useUrl);
+		this.$.signInCode.setContent(info.code);
+		// activate.php?app=&code= works on every host (no rewrite), and pre-fills the code.
+		this.$.signInQr.setText(this.$.broker.getBrokerBaseUrl() + "/activate.php?app=" +
+			encodeURIComponent(this.$.broker.getAppName()) + "&code=" + encodeURIComponent(info.code));
+		this.$.signInStatus.setContent($L("Waiting for you to finish signing in…"));
+		this.$.signInPanel.setShowing(true);
+		return true;
+	},
+
+	// onConnected: the Music User Token arrives exactly once. Fill the fields, then save so
+	// the app applies it (and re-syncs the library) the same as a manual paste + Save.
+	storeTokens: function (sender, tokens) {
+		var token = tokens.music_user_token || tokens.access_token || "";
+		var i;
+		this.$.signInPanel.setShowing(false);
+		this.$.btnSignIn.setDisabled(false);
+		if (!token) {
+			this._showSignInError($L("Apple did not return a sign-in token. Please try again."));
+			return true;
+		}
+		this._musicUserToken = token;
+		this._showSignedIn();
+		for (i = 0; i < JUKIE_STOREFRONTS.length; i++) {
+			if (JUKIE_STOREFRONTS[i].value === tokens.storefront) {
+				this.$.selStorefront.setValue(tokens.storefront);
+				break;
+			}
+		}
+		this.doSaveSettings(this.getValues());
+		return true;
+	},
+
+	codeExpired: function () {
+		this.$.signInStatus.setContent($L("That code expired. Tap Cancel, then sign in again."));
+		return true;
+	},
+
+	brokerError: function (sender, message) {
+		this._cancelSignIn();
+		this._showSignInError(message || $L("Could not reach the sign-in service. Check your connection and try again."));
+		return true;
+	},
+
+	//#endregion
 
 	onclick_Save: function () {
 		this.doSaveSettings(this.getValues());

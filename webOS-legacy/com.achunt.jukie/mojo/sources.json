@@ -7,6 +7,7 @@
   { "source": "app/models/settings-service.js" },
   { "source": "app/models/applemusic-service.js" },
   { "source": "app/models/librarycache-service.js" },
+  { "source": "app/models/broker-service.js" },
   { "source": "app/models/adts.js" },
   { "source": "app/models/emoji.js" },
   { "source": "app/models/playback-service.js" },

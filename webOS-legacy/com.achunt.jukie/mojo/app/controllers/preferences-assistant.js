@@ -61,21 +61,12 @@ PreferencesAssistant.prototype.setup = function () {
 	Jukie.setupBack(this.controller);
 	var prefs = Jukie.prefs || Jukie.settings.defaults();
 
+	// The tokens are never shown or edited: they ride along as plain state so Save writes them back.
 	this.devModel = { value: prefs.developerToken || "" };
 	this.musicModel = { value: prefs.musicUserToken || "" };
 	this.storeModel = { value: prefs.storefront || "us" };
 	this.cacheSizeModel = { value: typeof prefs.cacheLimitMB === "number" ? prefs.cacheLimitMB : 512 };
 	this.searchLimitModel = { value: prefs.searchResultLimit || 5 };
-
-	this.controller.setupWidget("devToken", {
-		hintText: "paste Developer Token", multiline: true, textFieldName: "devToken",
-		changeOnKeyPress: true, autoFocus: false, autoReplace: false, autoCapitalization: false
-	}, this.devModel);
-
-	this.controller.setupWidget("musicToken", {
-		hintText: "paste Music User Token", multiline: true, textFieldName: "musicToken",
-		changeOnKeyPress: true, autoFocus: false, autoReplace: false, autoCapitalization: false
-	}, this.musicModel);
 
 	// No `label` attribute here (the framework renders that as small text next
 	// to the value, not as a caption) - the field-label div above already says
@@ -105,6 +96,17 @@ PreferencesAssistant.prototype.setup = function () {
 	this.controller.setupWidget("refreshBtn", { type: Mojo.Widget.activityButton }, this.refreshModel);
 	this.controller.setupWidget("clearCacheBtn", { type: Mojo.Widget.defaultButton }, this.clearModel);
 
+	this.broker = new BrokerService();
+	this.signInModel = { label: this.musicModel.value ? "Sign in again" : "Sign in with Apple Music", disabled: false };
+	this.controller.get("signedIn").innerHTML = this.musicModel.value ? "Signed in to Apple Music" : "Not signed in";
+	this.signInCancelModel = { label: "Cancel", disabled: false };
+	this.controller.setupWidget("signInBtn", { type: Mojo.Widget.defaultButton }, this.signInModel);
+	this.controller.setupWidget("signInCancelBtn", { type: Mojo.Widget.defaultButton }, this.signInCancelModel);
+	this.signInH = this.onSignIn.bind(this);
+	this.signInCancelH = this.onSignInCancel.bind(this);
+	this.controller.get("signInBtn").observe(Mojo.Event.tap, this.signInH);
+	this.controller.get("signInCancelBtn").observe(Mojo.Event.tap, this.signInCancelH);
+
 	this.saveH = this.onSave.bind(this);
 	this.refreshH = this.onRefresh.bind(this);
 	this.clearH = this.onClearCache.bind(this);
@@ -115,6 +117,63 @@ PreferencesAssistant.prototype.setup = function () {
 
 PreferencesAssistant.prototype.setStatus = function (t) {
 	this.controller.get("prefs-status").innerHTML = t || "";
+};
+
+// Sign in with Apple Music via the OAuth broker: show a code, the user finishes Apple's sign-in
+// on a phone or computer, and the Music User Token comes back here once. Then it is saved
+// exactly like a manual paste + Save.
+PreferencesAssistant.prototype.onSignIn = function () {
+	var self = this;
+	this.setStatus("");
+	this.signInModel.disabled = true;
+	this.controller.modelChanged(this.signInModel);
+	this.broker.start({
+		onCode: function (info) {
+			self.controller.get("signInUrl").innerHTML = self.broker.baseUrl + "/activate.php?app=" +
+				encodeURIComponent(self.broker.appName);
+			self.controller.get("signInCode").innerHTML = info.code;
+			self.controller.get("signInStatus").innerHTML = "Waiting for you to finish signing in…";
+			self.controller.get("signInPanel").style.display = "";
+		},
+		onConnected: function (tokens) {
+			var i;
+			self.hideSignIn();
+			self.musicModel.value = tokens.music_user_token || tokens.access_token;
+			self.showSignedIn();
+			for (i = 0; i < self.STOREFRONTS.length; i++) {
+				if (self.STOREFRONTS[i].value === tokens.storefront) {
+					self.storeModel.value = tokens.storefront;
+					self.controller.modelChanged(self.storeModel);
+					break;
+				}
+			}
+			self.onSave();
+		},
+		onExpired: function () {
+			self.controller.get("signInStatus").innerHTML = "That code expired. Tap Cancel, then sign in again.";
+		},
+		onError: function (message) {
+			self.hideSignIn();
+			self.setStatus(message);
+		}
+	});
+};
+
+PreferencesAssistant.prototype.showSignedIn = function () {
+	this.controller.get("signedIn").innerHTML = this.musicModel.value ? "Signed in to Apple Music" : "Not signed in";
+	this.signInModel.label = this.musicModel.value ? "Sign in again" : "Sign in with Apple Music";
+	this.controller.modelChanged(this.signInModel);
+};
+
+PreferencesAssistant.prototype.hideSignIn = function () {
+	this.broker.stop();
+	this.controller.get("signInPanel").style.display = "none";
+	this.signInModel.disabled = false;
+	this.controller.modelChanged(this.signInModel);
+};
+
+PreferencesAssistant.prototype.onSignInCancel = function () {
+	this.hideSignIn();
 };
 
 PreferencesAssistant.prototype.onSave = function () {
@@ -179,6 +238,9 @@ PreferencesAssistant.prototype.onClearCache = function () {
 };
 
 PreferencesAssistant.prototype.cleanup = function () {
+	this.broker.stop();
+	this.controller.get("signInBtn").stopObserving(Mojo.Event.tap, this.signInH);
+	this.controller.get("signInCancelBtn").stopObserving(Mojo.Event.tap, this.signInCancelH);
 	this.controller.get("saveBtn").stopObserving(Mojo.Event.tap, this.saveH);
 	this.controller.get("refreshBtn").stopObserving(Mojo.Event.tap, this.refreshH);
 	this.controller.get("clearCacheBtn").stopObserving(Mojo.Event.tap, this.clearH);

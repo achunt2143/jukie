@@ -662,3 +662,8 @@
 	height: 32px;
 	margin: -16px 0 0 -16px;
 }
+
+/* Preferences: Sign in with Apple Music (broker code panel) */
+.jukie-signin-panel { text-align: center; padding: 4px 8px; }
+.jukie-signin-url { color: #fff; font-size: 15px; font-weight: bold; word-wrap: break-word; padding: 2px 4px 8px; }
+.jukie-signin-code { color: #fa2d48; font-size: 34px; font-weight: bold; letter-spacing: 8px; font-family: monospace; padding: 4px 0; }

@@ -167,6 +167,7 @@ enyo.kind({
 		this.$.Settings.setDb8(this.$.DB8);
 
 		this.appleMusicService.on("onAppleMusicError", enyo.bind(this, "onAppleMusicError"));
+		this.appleMusicService.on("onMusicUserTokenRejected", enyo.bind(this, "onMusicUserTokenRejected"));
 		this.appleMusicService.on("onDeveloperTokenRefreshed", enyo.bind(this, "onDeveloperTokenAutoRefreshed"));
 	},
 
@@ -240,6 +241,44 @@ enyo.kind({
 	closePermissionErrorDialog: function ()
 	{
 		this.$.permissionErrorDialog.hide();
+	},
+
+	// Apple stopped accepting the saved Music User Token (they last about six months, or the
+	// subscription lapsed). Many requests fail together, so ask once per launch.
+	onMusicUserTokenRejected: function ()
+	{
+		if (this._askedSignInAgain)
+		{
+			return;
+		}
+		this._askedSignInAgain = true;
+		if (!this.$.signInAgainDialog)
+		{
+			this.createComponent({
+				name: "signInAgainDialog", kind: "ModalDialog", caption: $L("Sign in again"),
+				components: [
+					{content: $L("Apple Music no longer accepts your sign-in. It may have expired, or your subscription may have lapsed."),
+						style: "padding: 12px;"},
+					{layoutKind: "HFlexLayout", pack: "center", components: [
+						{kind: "Button", caption: $L("Sign in"), className: "enyo-button-affirmative", onclick: "signInAgainClick", style: "margin: 12px;"},
+						{kind: "Button", caption: $L("Later"), onclick: "signInAgainLater", style: "margin: 12px;"}
+					]}
+				]
+			}, {owner: this});
+			this.$.signInAgainDialog.render();
+		}
+		this.$.signInAgainDialog.openAtCenter();
+	},
+
+	signInAgainClick: function ()
+	{
+		this.$.signInAgainDialog.hide();
+		this.openSettings();
+	},
+
+	signInAgainLater: function ()
+	{
+		this.$.signInAgainDialog.hide();
 	},
 
 	ready: function ()
