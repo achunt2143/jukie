@@ -620,7 +620,7 @@ body {
 	height:100%;
 	width:100%;
 	background: url(../images/bg_flow_landscape.png) no-repeat 50% 50%;
-	z-index:999;
+	z-index:10;
 	top:0;
  }
 .portrait .flow .mask {
@@ -764,4 +764,258 @@ body {
 }
 .album_artist_Blueicon {
 	margin: 0em -1em 0px 1em;
+}
+
+/* iPad-style Split View Lyrics Panel (TouchPad Enyo) */
+.albumArtLyricsPanel {
+	position: fixed;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 80px;
+	z-index: 80;
+	background: #141418 url(../images/bg_wrapper.png) repeat 50% 50%;
+	display: -webkit-box;
+	-webkit-box-orient: horizontal;
+	overflow: hidden;
+}
+
+/* Left column: 50% width, artwork + metadata centered */
+.albumArtLyricsLeftCol {
+	width: 50% !important;
+	max-width: 50% !important;
+	min-width: 50% !important;
+	-webkit-box-flex: 1;
+	height: 100%;
+	padding: 20px;
+	-webkit-box-sizing: border-box;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-box-align: center;
+	-webkit-box-pack: center;
+}
+
+.albumArtLyricsCoverContainer {
+	width: 370px;
+	height: 370px;
+	max-width: 100%;
+	display: -webkit-box;
+	-webkit-box-align: center;
+	-webkit-box-pack: center;
+}
+
+.albumArtLyricsCover {
+	width: 370px;
+	height: 370px;
+	background-color: #1a1a20;
+	background-image: url(../images/imgAlbumArt.png);
+	background-repeat: no-repeat;
+	background-position: center center;
+	background-size: cover;
+	-webkit-border-radius: 16px;
+	-webkit-box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65);
+	cursor: pointer;
+}
+
+.albumArtLyricsCover:active {
+	opacity: 0.85;
+}
+
+.albumArtLyricsTrackInfo {
+	width: 370px;
+	margin-top: 18px;
+	text-align: left;
+}
+
+.albumArtLyricsSongTitle {
+	font-size: 24px;
+	font-weight: bold;
+	color: #ffffff;
+	line-height: 1.25;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.albumArtLyricsArtistName {
+	font-size: 18px;
+	color: rgba(255, 255, 255, 0.75);
+	margin-top: 6px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.albumArtLyricsAlbumName {
+	font-size: 14px;
+	color: rgba(255, 255, 255, 0.45);
+	margin-top: 4px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Right column: 50% width, lyrics header + scroller */
+.albumArtLyricsRightCol {
+	width: 50% !important;
+	max-width: 50% !important;
+	min-width: 50% !important;
+	-webkit-box-flex: 1;
+	height: 100%;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	border-left: 1px solid rgba(255, 255, 255, 0.08);
+	overflow: hidden;
+	-webkit-box-sizing: border-box;
+}
+
+.albumArtLyricsHeader {
+	height: 52px;
+	min-height: 52px;
+	padding: 0 32px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	background: rgba(255, 255, 255, 0.02);
+	display: -webkit-box;
+	-webkit-box-align: center;
+	-webkit-box-sizing: border-box;
+}
+
+.albumArtLyricsTitle {
+	font-size: 15px;
+	font-weight: bold;
+	color: #fa2d48;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	-webkit-box-flex: 1;
+}
+
+.albumArtLyricsCloseBtn {
+	min-width: 32px !important;
+	width: 32px !important;
+	height: 32px !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	background-color: #fa2d48 !important;
+	border: 1px solid #fa2d48 !important;
+	background-image: url(../images/search-close.png) !important;
+	background-repeat: no-repeat !important;
+	background-position: center center !important;
+	-webkit-border-radius: 6px !important;
+	cursor: pointer;
+}
+
+.albumArtLyricsCloseBtn:active {
+	background-color: #d8243c !important;
+	border-color: #d8243c !important;
+}
+
+.albumArtLyricsScroller {
+	-webkit-box-flex: 1;
+	position: relative;
+}
+
+.albumArtLyricsBody {
+	padding: 24px 32px 140px 32px;
+}
+
+.albumArtLyricsLine {
+	padding: 14px 18px;
+	font-size: 21px;
+	line-height: 1.45;
+	color: rgba(255, 255, 255, 0.42);
+	cursor: pointer;
+	-webkit-border-radius: 10px;
+	-webkit-transition: color 0.25s linear, background-color 0.25s linear;
+}
+
+.albumArtLyricsLine:hover,
+.albumArtLyricsLine:active {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.albumArtLyricsLine.is-active {
+	color: #ffffff;
+	font-weight: bold;
+	background: rgba(250, 45, 72, 0.22);
+}
+
+.albumArtLyricsEmpty {
+	padding: 120px 24px;
+	text-align: center;
+	color: rgba(255, 255, 255, 0.7);
+	font-size: 18px;
+}
+
+.albumArtLyricsEmptyTitle {
+	font-size: 22px;
+	font-weight: bold;
+	color: rgba(255, 255, 255, 0.85);
+	line-height: 1.3;
+}
+
+.albumArtLyricsEmptySub {
+	margin-top: 10px;
+	font-size: 16px;
+	color: rgba(255, 255, 255, 0.45);
+	line-height: 1.4;
+}
+
+.albumArtSongwriters {
+	margin-top: 36px;
+	padding: 18px;
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+	color: rgba(255, 255, 255, 0.35);
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+/* Portrait adaptation */
+.portrait .albumArtLyricsPanel {
+	-webkit-box-orient: vertical;
+}
+
+.portrait .albumArtLyricsLeftCol {
+	width: 100% !important;
+	max-width: 100% !important;
+	min-width: 100% !important;
+	height: auto;
+	padding: 16px 20px;
+	-webkit-box-orient: horizontal;
+	-webkit-box-pack: start;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.portrait .albumArtLyricsCoverContainer {
+	width: 130px;
+	height: 130px;
+}
+
+.portrait .albumArtLyricsCover {
+	width: 130px;
+	height: 130px;
+	-webkit-border-radius: 10px;
+}
+
+.portrait .albumArtLyricsTrackInfo {
+	width: auto;
+	-webkit-box-flex: 1;
+	margin-top: 0;
+	margin-left: 18px;
+}
+
+.portrait .albumArtLyricsRightCol {
+	width: 100% !important;
+	max-width: 100% !important;
+	min-width: 100% !important;
+	border-left: none;
+}
+
+.portrait .albumArtLyricsEmpty {
+	padding: 40px 20px;
+}
+
+.enyo-button.btn-lyrics-active {
+	background: #fa2d48 !important;
+	color: #ffffff !important;
+	border-color: #fa2d48 !important;
 }

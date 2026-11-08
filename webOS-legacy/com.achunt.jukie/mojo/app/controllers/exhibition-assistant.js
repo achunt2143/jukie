@@ -1,4 +1,4 @@
-/*globals Mojo, Jukie, setInterval, clearInterval, Date */
+/*globals Mojo, Jukie, JukieLyrics, JukieEmoji, setInterval, clearInterval, setTimeout, clearTimeout, Date */
 /*
  * ExhibitionAssistant - ambient full-screen now-playing display (Touchstone dock mode).
  * Passive display only: reads Jukie.currentTrack / Jukie.playback directly, the exact
@@ -10,11 +10,20 @@
  * item for manual entry without a physical dock (goes through the same Jukie.enterExhibition
  * helper, so it exercises the identical stage-creation code).
  *
- * No scrubber, no volume - deliberately minimal, matching the sibling Enyo app's own
- * Exhibition Mode design (meant to be glanced at from across a room, not interacted with).
+ * Supports synchronized lyrics when toggled. On the Pre (320x480), the lyrics overlay
+ * is positioned strictly between the top clock and the bottom times/transport controls,
+ * with zero overlap over either.
  */
 var ExhibitionAssistant = function () {
 	this._clockTimer = null;
+	this._lyrics = null;
+	this._lyricsSongId = null;
+	this._lyricsState = "idle";
+	this._showingLyrics = false;
+	this._activeLyricIdx = -1;
+	this._lastPos = 0;
+	this._userInteractingLyrics = false;
+	this._userScrollTimeout = null;
 };
 
 // Paint whatever's playing. Exhibition runs on its own dedicated stage (see
@@ -45,14 +54,12 @@ ExhibitionAssistant.prototype._paintTrack = function (track) {
 	// not a bounded thumbnail. Jukie.artUrl also forces http - see its own note.
 	var art = Jukie.artUrl(track.artUrl, 640);
 	this.controller.get("exh-art").style.backgroundImage = art ? ("url('" + art + "')") : "";
+
+	this.updateLyricsMeta();
+	this.loadLyrics(track);
+	this._applyLyricsVisibility();
 };
 
-// TEMPORARY: wrapped in try/catch with explicit logging while diagnosing a silent blank
-// screen on this scene - unlike the List widget, this framework build does NOT
-// auto-catch-and-log an assistant's own setup() exceptions, so a real bug here would
-// otherwise abort rendering with nothing in palm-log/messages to explain why. Remove
-// this wrapper once the scene is confirmed working; every other assistant in this app
-// is deliberately left unwrapped.
 ExhibitionAssistant.prototype.setup = function () {
 	try {
 		this._setupInner();
@@ -61,33 +68,86 @@ ExhibitionAssistant.prototype.setup = function () {
 	}
 };
 
+ExhibitionAssistant.prototype.layout = function () {
+	var scene = this.controller.get("exh-scene");
+	var win = this.controller.window || window;
+	var winW = win.innerWidth || 320;
+	var winH = win.innerHeight || 480;
+
+	if (scene) {
+		scene.style.width = winW + "px";
+		scene.style.height = winH + "px";
+	}
+
+	var overlay = this.controller.get("exh-lyrics-overlay");
+	var scroller = this.controller.get("exh-lyrics-scroller");
+	if (overlay && scroller) {
+		// Pinned strictly between clock (Y~60) and times/transport (Y~356).
+		// Height is at least 240px, fitting comfortably on 320x480.
+		var overlayH = Math.max(240, winH - 60 - 124);
+		overlay.style.height = overlayH + "px";
+		scroller.style.height = (overlayH - 32) + "px";
+		if (scroller.mojo && typeof scroller.mojo.validateScrollPosition === "function") {
+			scroller.mojo.validateScrollPosition();
+		}
+	}
+};
+
 ExhibitionAssistant.prototype._setupInner = function () {
-	// Unconditional checkpoint (not just the catch-block error above) - the previous round
-	// of "nothing shows" had no crash either, so a log line that proves setup() actually
-	// ran (vs. never being reached at all) is the fact that's actually missing right now.
 	Mojo.Log.info("[Exhibition] setup() entered");
 
-	// Palm's own SDK sample (SDK/share/samplecode/mojo/ExhibitionMode) sizes its scene
-	// root with explicit width/height read from the window rather than relying on a
-	// height:100% cascade from html/body/.palm-scene (its scene html even hardcodes
-	// width/height attributes on the root div). A freshly created "dockMode"-typed stage
-	// is not guaranteed to carry the same ancestor-height chain a normal card stage does,
-	// so this scene's position:absolute + inset:0 full-bleed layers could be resolving
-	// against a zero-height containing block - no JS error, just nothing visible, which
-	// matches exactly what's been reported. Stamping explicit pixel dimensions on the
-	// scene root sidesteps that ancestor chain entirely, matching the sample's approach.
 	var scene = this.controller.get("exh-scene");
 	if (scene && this.controller.window) {
 		scene.style.width = this.controller.window.innerWidth + "px";
 		scene.style.height = this.controller.window.innerHeight + "px";
 	}
 
+	// Restore lyrics toggled state from localStorage
+	var savedToggled = false;
+	try { savedToggled = (localStorage.getItem("jukie_lyrics_toggled") === "1"); } catch (e) {}
+	this._showingLyrics = savedToggled;
+
+	// Setup Mojo Scroller for exhibition lyrics
+	this.controller.setupWidget("exh-lyrics-scroller", { mode: "vertical" }, {});
+
+	// Touch interaction detection on scroller to temporarily pause auto-scroll
+	var scroller = this.controller.get("exh-lyrics-scroller");
+	var self = this;
+	this._onUserScrollStart = function () {
+		self._userInteractingLyrics = true;
+		if (self._userScrollTimeout) {
+			clearTimeout(self._userScrollTimeout);
+		}
+		self._userScrollTimeout = setTimeout(function () {
+			self._userInteractingLyrics = false;
+			self.scrollActiveLyricIntoView();
+		}, 4500);
+	};
+	this._onUserScrollEnd = function () {
+		if (self._userScrollTimeout) {
+			clearTimeout(self._userScrollTimeout);
+		}
+		self._userScrollTimeout = setTimeout(function () {
+			self._userInteractingLyrics = false;
+			self.scrollActiveLyricIntoView();
+		}, 3000);
+	};
+	if (scroller) {
+		this.scrollerDragStartHandler = this._onUserScrollStart.bind(this);
+		this.scrollerFlickHandler = this._onUserScrollStart.bind(this);
+		this.scrollerDragEndHandler = this._onUserScrollEnd.bind(this);
+		scroller.observe(Mojo.Event.dragStart, this.scrollerDragStartHandler);
+		scroller.observe(Mojo.Event.flick, this.scrollerFlickHandler);
+		scroller.observe(Mojo.Event.dragEnd, this.scrollerDragEndHandler);
+	}
+
+	this.layout();
 	this.renderTrack();
 
 	this.spinnerModel = { spinning: false };
 	this.controller.setupWidget("exh-spinner", { spinnerSize: "small" }, this.spinnerModel);
 
-	// Transport: prev / play-pause / next - identical calls to NowplayingAssistant's.
+	// Transport: prev / play-pause / next
 	this.ppHandler = this.onPlayPause.bindAsEventListener(this);
 	this.controller.get("exh-playpause").observe(Mojo.Event.tap, this.ppHandler);
 	this.prevHandler = this.onPrev.bindAsEventListener(this);
@@ -95,15 +155,16 @@ ExhibitionAssistant.prototype._setupInner = function () {
 	this.nextHandler = this.onNext.bindAsEventListener(this);
 	this.controller.get("exh-next").observe(Mojo.Event.tap, this.nextHandler);
 
-	// Tap the background (art layer) to exit. A tap only ever lands on whichever
-	// element is topmost at that screen point, so tapping a transport button (drawn on
-	// top, in .jukie-exh-content) never reaches this handler - no hit-testing needed.
+	// Tap background to exit Exhibition
 	this.bgHandler = this.onBackgroundTap.bindAsEventListener(this);
 	this.controller.get("exh-art").observe(Mojo.Event.tap, this.bgHandler);
 
-	// Attach to the playback service's live callbacks - identical wiring to
-	// NowplayingAssistant.setup(), just updating this scene's own elements.
-	var self = this;
+	// Tap lyric line to seek
+	this.lyricsTapHandler = this.onLyricLineTap.bindAsEventListener(this);
+	var lyricsList = this.controller.get("exh-lyrics-list");
+	if (lyricsList) { lyricsList.observe(Mojo.Event.tap, this.lyricsTapHandler); }
+
+	// Attach to playback service callbacks
 	this._pb = Jukie.playback;
 	this._pb.onTimeUpdate = function (p) { self.onTimeUpdate(p); };
 	this._pb.onPlaying = function () { self.setPlayingUI(true); self.setBuffering(false); };
@@ -111,26 +172,314 @@ ExhibitionAssistant.prototype._setupInner = function () {
 	this._pb.onBuffering = function (p) { self.setBuffering(p.buffering); };
 	this._pb.onEnded = function () { self.setPlayingUI(false); self.setBuffering(false); self.updateTimes(0, self._duration || 0); };
 	this._pb.onError = function () { self.setPlayingUI(false); self.setBuffering(false); };
-	// Auto-advance (PlaybackService's own "ended" handling) moves to a new track without
-	// this scene ever calling renderTrack() itself - see NowplayingAssistant's identical
-	// wiring for the full explanation.
 	this._pb.onTrackChanged = function () { self.renderTrack(); };
 
-	// Optimistic paint from whatever's cached (avoids a blank flash), immediately
-	// corrected by the real fetch below - this scene's own PlaybackService instance may
-	// never have had play()/resume() called on it directly (the track is commonly
-	// started from the main app's stage instead), so its cached state can be stale/wrong
-	// until refreshStatus() hears back from the shared backend.
 	this.setPlayingUI(this._pb.isPlaying());
 	this.setBuffering(this._pb.isBuffering());
 	this._pb.refreshStatus();
 
-	// Clock: h:mm AM/PM, ticking every second - direct port of the Enyo exhibition
-	// view's _tickClock (12-hour, no leading zero on the hour, zero-padded minutes).
+	// Clock: h:mm AM/PM, ticking every second
 	this._tickClock();
 	this._clockTimer = setInterval(this._tickClock.bind(this), 1000);
 
 	Mojo.Log.info("[Exhibition] setup() completed");
+};
+
+ExhibitionAssistant.prototype._applyLyricsVisibility = function () {
+	var overlay = this.controller.get("exh-lyrics-overlay");
+	var trackInfo = this.controller.get("exh-track-info");
+	var scene = this.controller.get("exh-scene");
+
+	if (this._showingLyrics) {
+		if (overlay) { overlay.style.display = "-webkit-box"; }
+		if (trackInfo) { trackInfo.style.display = "none"; }
+		if (scene) { scene.addClassName("has-lyrics"); }
+		this.layout();
+		if (this._lastPos !== undefined && this._lyrics && this._lyrics.lines) {
+			this._activeLyricIdx = -1;
+			this.updateLyricsTime(this._lastPos);
+		} else if (this._activeLyricIdx >= 0) {
+			this._setLineActive(this._activeLyricIdx, true);
+			this.scrollActiveLyricIntoView();
+		}
+	} else {
+		if (overlay) { overlay.style.display = "none"; }
+		if (trackInfo) { trackInfo.style.display = "block"; }
+		if (scene) { scene.removeClassName("has-lyrics"); }
+	}
+};
+
+ExhibitionAssistant.prototype.onToggleLyrics = function () {
+	this._showingLyrics = !this._showingLyrics;
+	try { localStorage.setItem("jukie_lyrics_toggled", this._showingLyrics ? "1" : "0"); } catch (e) {}
+	this._userInteractingLyrics = false;
+	if (this._userScrollTimeout) {
+		clearTimeout(this._userScrollTimeout);
+		this._userScrollTimeout = null;
+	}
+	this._applyLyricsVisibility();
+};
+
+ExhibitionAssistant.prototype.updateLyricsMeta = function () {
+	var el = this.controller.get("exh-lyrics-track");
+	if (!el) { return; }
+	var track = this._track || Jukie.currentTrack || {};
+	var title = track.title || "Unknown";
+	var artist = track.artist || "";
+	var meta = JukieEmoji.text(title).escapeHTML();
+	if (artist) {
+		meta += ' &middot; <span class="jukie-exh-lyrics-meta-artist">' + JukieEmoji.text(artist).escapeHTML() + '</span>';
+	}
+	el.innerHTML = meta;
+};
+
+ExhibitionAssistant.prototype._getTrackSongId = function (track) {
+	if (!track) { return null; }
+	if (typeof track === "string" || typeof track === "number") {
+		return "" + track;
+	}
+	var id = track.catalogId || track.id || track.libraryId || track.strTrackID;
+	return id ? ("" + id) : null;
+};
+
+ExhibitionAssistant.prototype.loadLyrics = function (track) {
+	var self = this;
+	var t = (track && typeof track === "object") ? track : (this._track || Jukie.currentTrack || {});
+	var songId = this._getTrackSongId(t);
+
+	if (!songId) {
+		this._lyricsState = "unavailable";
+		this._lyrics = null;
+		this._lyricsSongId = null;
+		this._activeLyricIdx = -1;
+		this._renderLyricsList();
+		return;
+	}
+
+	if (this._lyricsSongId === songId) {
+		if (this._lyricsState === "loaded" && this._lyrics) {
+			this._renderLyricsList();
+			if (this._lastPos !== undefined) {
+				this.updateLyricsTime(this._lastPos);
+			}
+			return;
+		}
+		if (this._lyricsState === "unavailable") {
+			this._renderLyricsList();
+			return;
+		}
+		if (this._lyricsState === "loading") {
+			return;
+		}
+	}
+
+	this._lyricsSongId = songId;
+	this._lyricsState = "loading";
+	this._lyrics = null;
+	this._activeLyricIdx = -1;
+	this._renderLyricsList();
+
+	if (!Jukie.apple) {
+		this._lyricsState = "unavailable";
+		this._renderLyricsList();
+		return;
+	}
+
+	Jukie.apple.getLyrics(songId, { syllable: false }).then(function (response) {
+		if (self._lyricsSongId !== songId) { return; }
+		var ttml = JukieLyrics.extractTTML(response);
+		if (!ttml) {
+			self._onLyricsUnavailable(songId);
+			return;
+		}
+		var parsed = JukieLyrics.parseTTML(ttml);
+		if (!parsed || !parsed.lines || parsed.lines.length === 0) {
+			self._onLyricsUnavailable(songId);
+			return;
+		}
+		self._lyricsState = "loaded";
+		self._lyrics = parsed;
+		self._renderLyricsList();
+		if (self._lastPos !== undefined) {
+			self.updateLyricsTime(self._lastPos);
+		}
+	}).catch(function () {
+		if (self._lyricsSongId !== songId) { return; }
+		// If songId was a library ID ('i.xxxx'), try looking up catalogId first
+		if (typeof songId === "string" && songId.indexOf("i.") === 0) {
+			Jukie.apple.request("/me/library/songs/" + encodeURIComponent(songId), { include: "catalog" })
+				.then(function (cRes) {
+					if (self._lyricsSongId !== songId) { return; }
+					var catSong = cRes && cRes.data && cRes.data[0] &&
+						cRes.data[0].relationships && cRes.data[0].relationships.catalog &&
+						cRes.data[0].relationships.catalog.data && cRes.data[0].relationships.catalog.data[0];
+					if (catSong && catSong.id) {
+						if (self._track) { self._track.catalogId = catSong.id; }
+						self.loadLyrics(catSong.id);
+					} else {
+						self._onLyricsUnavailable(songId);
+					}
+				})
+				.catch(function () {
+					self._onLyricsUnavailable(songId);
+				});
+			return;
+		}
+		self._onLyricsUnavailable(songId);
+	});
+};
+
+ExhibitionAssistant.prototype._onLyricsUnavailable = function (songId) {
+	if (songId && this._lyricsSongId !== songId) { return; }
+	this._lyricsState = "unavailable";
+	this._lyrics = null;
+	this._activeLyricIdx = -1;
+	this._renderLyricsList();
+};
+
+ExhibitionAssistant.prototype._renderLyricsList = function () {
+	var list = this.controller.get("exh-lyrics-list");
+	if (!list) { return; }
+	if (!this._lyrics || !this._lyrics.lines || this._lyrics.lines.length === 0) {
+		if (this._lyricsState === "loading") {
+			list.innerHTML = '<div class="jukie-exh-lyrics-empty">' +
+				'<div class="jukie-exh-lyrics-empty-title">Loading lyrics…</div>' +
+				'</div>';
+		} else {
+			list.innerHTML = '<div class="jukie-exh-lyrics-empty">' +
+				'<div class="jukie-exh-lyrics-empty-title">No Lyrics Available</div>' +
+				'<div class="jukie-exh-lyrics-empty-sub">Lyrics aren\'t available for this song.</div>' +
+				'</div>';
+		}
+		return;
+	}
+	var html = "";
+	var lines = this._lyrics.lines;
+	for (var i = 0; i < lines.length; i++) {
+		var line = lines[i];
+		var beginAttr = (line.begin !== null && line.begin !== undefined) ? (' data-begin="' + line.begin + '"') : '';
+		var activeClass = (i === this._activeLyricIdx) ? " is-active" : "";
+		html += '<div class="jukie-exh-lyrics-line' + activeClass + '" id="exh-lyric-line-' + i + '" data-idx="' + i + '"' + beginAttr + ' x-mojo-tap-highlight="momentary">' +
+			JukieEmoji.text(line.text).escapeHTML() +
+			'</div>';
+	}
+	if (this._lyrics.songwriters && this._lyrics.songwriters.length > 0) {
+		var sw = this._lyrics.songwriters.join(", ");
+		html += '<div class="jukie-exh-lyrics-songwriters">' +
+			'Written by: ' + JukieEmoji.text(sw).escapeHTML() +
+			'</div>';
+	}
+	list.innerHTML = html;
+	var scroller = this.controller.get("exh-lyrics-scroller");
+	if (scroller && scroller.mojo && typeof scroller.mojo.validateScrollPosition === "function") {
+		scroller.mojo.validateScrollPosition();
+	}
+
+	if (this._activeLyricIdx >= 0) {
+		this.scrollActiveLyricIntoView();
+	}
+};
+
+ExhibitionAssistant.prototype._setLineActive = function (idx, active) {
+	if (idx < 0) { return; }
+	var el = this.controller.get("exh-lyric-line-" + idx) || document.getElementById("exh-lyric-line-" + idx);
+	if (!el) {
+		var list = this.controller.get("exh-lyrics-list");
+		if (list && list.children && list.children[idx]) {
+			el = list.children[idx];
+		}
+	}
+	if (!el) { return; }
+	var currentClass = el.className || "";
+	if (active) {
+		if (currentClass.indexOf("is-active") === -1) {
+			el.className = (currentClass + " is-active").trim();
+		}
+	} else {
+		if (currentClass.indexOf("is-active") !== -1) {
+			el.className = currentClass.replace(/\bis-active\b/g, "").replace(/\s+/g, " ").trim();
+		}
+	}
+};
+
+ExhibitionAssistant.prototype.scrollActiveLyricIntoView = function () {
+	if (!this._showingLyrics || this._activeLyricIdx < 0 || this._userInteractingLyrics) { return; }
+	var list = this.controller.get("exh-lyrics-list");
+	var scroller = this.controller.get("exh-lyrics-scroller");
+	if (!list || !scroller) { return; }
+	var activeEl = this.controller.get("exh-lyric-line-" + this._activeLyricIdx) ||
+		document.getElementById("exh-lyric-line-" + this._activeLyricIdx);
+	if (!activeEl && list.children) {
+		activeEl = list.children[this._activeLyricIdx];
+	}
+	if (activeEl) {
+		var elTop = activeEl.offsetTop;
+		var elHeight = activeEl.offsetHeight;
+		var scrollerHeight = scroller.offsetHeight || 260;
+		var targetY = Math.max(0, Math.round(elTop - (scrollerHeight / 2) + (elHeight / 2)));
+		if (scroller.mojo && typeof scroller.mojo.scrollTo === "function") {
+			// webOS 2 Mojo Scroller expects positive y coordinate for downward scrolling
+			scroller.mojo.scrollTo(0, targetY, true);
+		}
+	}
+};
+
+ExhibitionAssistant.prototype.updateLyricsTime = function (pos) {
+	this._lastPos = pos;
+	if (!this._lyrics || !this._lyrics.lines || !this._lyrics.lines.length) {
+		return;
+	}
+	var idx = JukieLyrics.findActiveLineIndex(this._lyrics.lines, pos);
+	if (idx === this._activeLyricIdx) {
+		return;
+	}
+
+	if (this._activeLyricIdx >= 0) {
+		this._setLineActive(this._activeLyricIdx, false);
+	}
+
+	this._activeLyricIdx = idx;
+
+	if (idx >= 0) {
+		this._setLineActive(idx, true);
+		this.scrollActiveLyricIntoView();
+	}
+};
+
+ExhibitionAssistant.prototype.onLyricLineTap = function (event) {
+	var target = event.target;
+	var list = this.controller.get("exh-lyrics-list");
+	while (target && target !== list) {
+		if (target.className && target.className.indexOf("jukie-exh-lyrics-line") !== -1) {
+			break;
+		}
+		target = target.parentNode;
+	}
+	if (!target || !target.className || target.className.indexOf("jukie-exh-lyrics-line") === -1) { return; }
+	var secStr = target.getAttribute("data-begin");
+	if (secStr !== null && secStr !== undefined && secStr !== "") {
+		var sec = parseFloat(secStr);
+		if (!isNaN(sec) && sec >= 0 && this._pb && this._duration > 0) {
+			this._pb.seekTo(Math.round(sec));
+			var idxStr = target.getAttribute("data-idx");
+			if (idxStr !== null && idxStr !== undefined) {
+				var idx = parseInt(idxStr, 10);
+				if (!isNaN(idx)) {
+					if (this._activeLyricIdx >= 0) {
+						this._setLineActive(this._activeLyricIdx, false);
+					}
+					this._activeLyricIdx = idx;
+					this._setLineActive(idx, true);
+					this._userInteractingLyrics = false;
+					if (this._userScrollTimeout) {
+						clearTimeout(this._userScrollTimeout);
+						this._userScrollTimeout = null;
+					}
+					this.scrollActiveLyricIntoView();
+				}
+			}
+		}
+	}
 };
 
 ExhibitionAssistant.prototype._tickClock = function () {
@@ -154,11 +503,14 @@ ExhibitionAssistant.prototype.onTimeUpdate = function (p) {
 	var pos = p.currentTime || 0, dur = p.duration || 0;
 	this._duration = dur;
 	this.updateTimes(pos, dur);
+	this.updateLyricsTime(pos);
 };
 
 ExhibitionAssistant.prototype.updateTimes = function (pos, dur) {
-	this.controller.get("exh-elapsed").innerHTML = this._fmtTime(pos);
-	this.controller.get("exh-duration").innerHTML = this._fmtTime(dur);
+	var elElapsed = this.controller.get("exh-elapsed");
+	if (elElapsed) { elElapsed.innerHTML = this._fmtTime(pos); }
+	var elDuration = this.controller.get("exh-duration");
+	if (elDuration) { elDuration.innerHTML = this._fmtTime(dur); }
 };
 
 ExhibitionAssistant.prototype._fmtTime = function (secs) {
@@ -204,8 +556,17 @@ ExhibitionAssistant.prototype.onNext = function () {
 // app-assistant.js), not a scene pushed onto the regular card stack, so there is no
 // scene underneath to pop back to - closing this stage's own window is what returns to
 // whatever was already open (the main card, untouched, since it was never swapped away).
-ExhibitionAssistant.prototype.onBackgroundTap = function () {
-	this.controller.window.close();
+ExhibitionAssistant.prototype.onBackgroundTap = function (event) {
+	// Only exit if tapping the background art layer or scrim, not elements within content
+	if (event && event.target) {
+		var t = event.target;
+		if (t.id === "exh-art" || t.className.indexOf("jukie-exh-art") !== -1 ||
+			t.className.indexOf("jukie-exh-scrim") !== -1 || t.id === "exh-scene") {
+			this.controller.window.close();
+		}
+	} else {
+		this.controller.window.close();
+	}
 };
 
 ExhibitionAssistant.prototype.cleanup = function () {
@@ -213,6 +574,22 @@ ExhibitionAssistant.prototype.cleanup = function () {
 	this.controller.get("exh-prev").stopObserving(Mojo.Event.tap, this.prevHandler);
 	this.controller.get("exh-next").stopObserving(Mojo.Event.tap, this.nextHandler);
 	this.controller.get("exh-art").stopObserving(Mojo.Event.tap, this.bgHandler);
+
+	var lyricsList = this.controller.get("exh-lyrics-list");
+	if (lyricsList && this.lyricsTapHandler) { lyricsList.stopObserving(Mojo.Event.tap, this.lyricsTapHandler); }
+
+	var scroller = this.controller.get("exh-lyrics-scroller");
+	if (scroller) {
+		if (this.scrollerDragStartHandler) { scroller.stopObserving(Mojo.Event.dragStart, this.scrollerDragStartHandler); }
+		if (this.scrollerFlickHandler) { scroller.stopObserving(Mojo.Event.flick, this.scrollerFlickHandler); }
+		if (this.scrollerDragEndHandler) { scroller.stopObserving(Mojo.Event.dragEnd, this.scrollerDragEndHandler); }
+	}
+
+	if (this._userScrollTimeout) {
+		clearTimeout(this._userScrollTimeout);
+		this._userScrollTimeout = null;
+	}
+
 	if (this._clockTimer !== null) {
 		clearInterval(this._clockTimer);
 		this._clockTimer = null;

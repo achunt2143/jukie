@@ -289,7 +289,11 @@ func (c *Client) APIGet(pathOrURL string) ([]byte, int, error) {
 		if !strings.HasPrefix(url, "/") {
 			url = "/" + url
 		}
-		url = "https://api.music.apple.com" + url
+		base := "https://api.music.apple.com"
+		if strings.Contains(url, "/lyrics") || strings.Contains(url, "/syllable-lyrics") {
+			base = "https://amp-api.music.apple.com"
+		}
+		url = base + url
 	}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

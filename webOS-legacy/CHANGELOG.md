@@ -2,7 +2,45 @@
 
 For the full feature rundown, see [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
-## v2.1.0
+## v2.2.0 — 2026-11-08
+
+### Added
+
+- **OAuth Sign-In via WOSA Broker.** A real Apple ID sign-in flow replaces pasting tokens:
+  Preferences presents an activation code, direct URL, and scannable QR code; the user signs in on
+  a phone or computer via `oauth.wosa.link` (`apple_musickit` flow), and the Music User Token is
+  automatically sent back to the device. Supported across both Enyo and Mojo builds.
+- **Time-synchronized and plain lyrics (Enyo / TouchPad).**
+  - iPad-style 50/50 split presentation in CoverFlow / FullScreen view (left pane: large 370px album
+    artwork, responsive song/artist/album metadata with tap-to-play/pause; right pane: scrolling lyrics).
+  - Synchronized active line highlighting in Apple Music accent red with auto-scrolling into center
+    view as the song plays.
+  - Interactive tap-to-seek: tapping any line with a timestamp seeks playback directly to that position.
+  - Contextual "Lyrics" / "Hide Lyrics" item in the webOS status bar App Menu, visible only in CoverFlow mode.
+  - Songwriter and composer credits rendered at the bottom of the lyrics list.
+  - Clean loading and empty states for tracks without available lyrics.
+- **Time-synchronized lyrics in Mojo (webOS 2.x phones / Pre 2 / Veer).**
+  - Integrated into the Now Playing scene with a dedicated Lyrics button and tap-to-flip album artwork toggle.
+  - Synchronized scrolling and red accent active line highlighting, interactive tap-to-seek, songwriter credits, and "No Lyrics Available" empty states.
+  - Remembers user's toggle state (`jukie_lyrics_toggled`) across tracks and app sessions.
+- **Exhibition Mode lyrics (TouchStone Dock).**
+  - TouchPad: dedicated semi-transparent floating lyrics panel alongside the clock and ambient artwork, with synchronized auto-scrolling and tap-to-seek.
+  - Phones (Mojo): full-screen docked lyrics display with time synchronization and tap-to-seek.
+  - Supports both passive mirroring from the main app via `ExhibitionManager` pushes and standalone playback when docked with the main app closed.
+  - Tap track info to toggle lyrics visibility; state persists across dock sessions.
+- **Library track catalog resolution for lyrics.** Automatically bridges library song IDs (`i.xxxx`) to their parent Apple Music catalog IDs via `/me/library/songs/{id}?include=catalog`, allowing personal library tracks to fetch synced lyrics seamlessly across all views.
+
+### Fixed
+
+- **TouchPad lyrics empty state display & scroller positioning (Enyo).** Reset scroller offsets and ensured proper geometry calculation on tracks without lyrics so "No Lyrics Available" consistently renders at the top of the viewport instead of being clipped off-screen by prior scroll positions.
+- **CoverFlow lyrics auto-restore (Enyo).** Automatically restores the lyrics split view upon entering CoverFlow if lyrics were previously toggled on.
+- **AppMenu lyrics toggle missing on initial CoverFlow launch (Enyo).** Resolved an `enyo.LazyControl`
+  initialization issue where menu items were uninstantiated before initial menu display.
+- **Lyrics overlay top offset and split layout balance (Enyo).** Eliminated the 32px top gap so the panel
+  sits flush below the system status bar, and resolved an `HFlexLayout` flex ratio imbalance to guarantee
+  an exact 50/50 column split (512px / 512px) on the TouchPad display.
+
+## v2.1.0 — 2026-10-17
 
 ### Added
 
@@ -57,7 +95,7 @@ For the full feature rundown, see [RELEASE_NOTES.md](RELEASE_NOTES.md).
   `webos2` was not rebuilt for 2.1.0 and still strips emoji in `apiGet`, which is correct for
   the TouchPad (it calls Apple directly) and the Pre2.
 
-## v2.0.0
+## v2.0.0 — 2026-07-30
 
 ### Added
 
@@ -105,7 +143,7 @@ For the full feature rundown, see [RELEASE_NOTES.md](RELEASE_NOTES.md).
   forcing `format=tarfile.GNU_FORMAT` on the rewritten tar. A device-side `chmod +x`
   backstop in `post-install-jukie.ps1` also remains as defense-in-depth.
 
-## v1.0.1
+## v1.0.1 — 2026-07-27
 
 ### Added
 
@@ -138,6 +176,6 @@ For the full feature rundown, see [RELEASE_NOTES.md](RELEASE_NOTES.md).
   `AppleMusicService` (calling the API from outside that origin) never set it. Added
   `Origin`/`Referer` headers to all Apple Music API requests.
 
-## v1.0 — Initial Release
+## v1.0.0 — 2026-07-02 (Initial Release)
 
-See [RELEASE_NOTES.md](RELEASE_NOTES.md).
+- **Initial release** of Jukie for legacy webOS (TouchPad and Pre 3). Full library sync, Apple Music catalog search, full-track playback via Widevine helper (`jukie-drm`), real pause and volume controls, A-Z picker, Apple Music red theme, offline caching, in-app Help, and native webOS Just Type and lock screen integration. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for complete details.

@@ -153,10 +153,8 @@ MainmenuAssistant.prototype.showSyncScrim = function (show) {
 	var div = this.controller.get("syncing-div");
 	if (!div) { return; }
 	div.style.display = show ? "block" : "none";
-	// The framework hard-codes the spinner 148px down, which is mid-screen only on a
-	// 480px-class display. Never less than that, so those screens look exactly as before.
 	var spinner = this.controller.get("sync-spinner");
-	if (spinner) { spinner.style.marginTop = Math.max(148, Math.round(window.innerHeight / 2) - 90) + "px"; }
+	if (spinner) { spinner.style.marginTop = "0px"; }
 	this.spinnerModel.spinning = !!show;
 	this.controller.modelChanged(this.spinnerModel);
 };

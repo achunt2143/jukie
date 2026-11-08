@@ -41,6 +41,7 @@ AppAssistant.prototype.initServices = function () {
 	Jukie.db8 = new Db8Service();
 	Jukie.settings = new SettingsService(Jukie.db8);
 	Jukie.apple = new AppleMusicService({ debug: false });
+	Jukie.apple.on("onMusicUserTokenRejected", function () { Jukie.askSignInAgain(); });
 	Jukie.library = new LibraryCacheService(Jukie.apple, Jukie.db8);
 	Jukie.playback = new PlaybackService();
 	this.bootstrap();
@@ -484,6 +485,26 @@ Jukie.showPermissionErrorDialog = function () {
 			"/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/jukie-drm-webos2 " +
 			"/media/cryptofs/apps/usr/palm/services/com.achunt.jukie.service/jukie-drm-webos3",
 		choices: [{ label: "OK", value: "ok" }]
+	});
+};
+
+// Apple stopped accepting the saved Music User Token (they last about six months, or the
+// subscription lapsed). Many requests fail together, so ask once per launch.
+Jukie.askSignInAgain = function () {
+	var app, stage, scene;
+	if (Jukie._askedSignInAgain) { return; }
+	Jukie._askedSignInAgain = true;
+	app = Mojo.Controller.getAppController();
+	stage = app.getStageController("jukiemain") || app.getStageController("dock");
+	scene = stage && stage.activeScene();
+	if (!scene) { return; }
+	scene.showAlertDialog({
+		title: "Sign in again",
+		message: "Apple Music no longer accepts your sign-in. It may have expired, or your subscription may have lapsed.",
+		onChoose: function (value) {
+			if (value === "signin") { stage.pushScene("preferences"); }
+		},
+		choices: [{ label: "Sign in", value: "signin" }, { label: "Later", value: "later" }]
 	});
 };
 

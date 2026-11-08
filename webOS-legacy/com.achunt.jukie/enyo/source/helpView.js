@@ -40,26 +40,17 @@ enyo.kind({
 						)}
 					]},
 					{className: "jukieBoxSection", components: [
-						{content: $L("Getting your Apple Music tokens"), className: "jukieBoxSectionCaption"},
+						{content: $L("Signing in"), className: "jukieBoxSectionCaption"},
 						{className: "jukieHelpParagraph", content: $L(
-							"Jukie needs a Developer Token to talk to Apple's Music catalog API. The " +
-							"proper way to get one is an Apple Developer Program membership: create a " +
-							"MusicKit identifier and private key under Certificates, Identifiers & " +
-							"Profiles, then sign a JWT (ES256) with your Team ID and Key ID — valid " +
-							"up to 6 months. If you'd rather not set that up, music.apple.com's own web " +
-							"player uses a short-lived public token you can copy from your browser's " +
-							"network inspector (look for the Authorization: Bearer header on " +
-							"api.music.apple.com requests) — it expires roughly monthly, so it'll " +
-							"need refreshing occasionally. Paste whichever one you use into " +
-							"Settings → Developer Token."
+							"Open Preferences and tap Sign in with Apple Music. Jukie shows a short code " +
+							"and a web address (or a QR code): open it on a phone or computer, enter the " +
+							"code, and sign in with your Apple ID there. Your password is only ever " +
+							"entered on Apple's own sign-in page, never on this device."
 						)},
 						{className: "jukieHelpParagraph", content: $L(
-							"The Music User Token identifies your personal Apple Music library and " +
-							"subscription. Sign in to music.apple.com in a desktop browser with your " +
-							"Apple ID, open your browser's developer tools, and look for the " +
-							"media-user-token cookie (or the Music-User-Token header on API requests) " +
-							"— copy that value into Settings → Music User Token. It's " +
-							"long-lived (months), so this is usually a one-time paste."
+							"The sign-in lasts about six months. When Apple stops accepting it, Jukie " +
+							"asks you to sign in again. Jukie looks after the rest on its own, including " +
+							"renewing its access to Apple's catalog."
 						)}
 					]},
 					{className: "jukieBoxSection", components: [

@@ -139,7 +139,7 @@ AppleMusicService.prototype = {
 	request: function (path, params) {
 		var self = this;
 		var query = this._buildQuery(params);
-		var url = this.API_BASE + path + (query ? ("?" + query) : "");
+		var url = (/^https?:\/\//i.test(path) ? path : (this.API_BASE + path)) + (query ? ("?" + query) : "");
 
 		this.log("GET (via service)", url);
 
@@ -154,9 +154,11 @@ AppleMusicService.prototype = {
 						resolve(response.json);
 						return;
 					}
+					self._noteRejection(response);
 					reject(new Error(self._apiError(response, url)));
 				},
 				onFailure: function (response) {
+					self._noteRejection(response);
 					reject(new Error(self._apiError(response, url)));
 				}
 			});
@@ -165,6 +167,16 @@ AppleMusicService.prototype = {
 			self.emitSignal("onAppleMusicError", { error: err });
 			throw err;
 		});
+	},
+
+	// A 403 on a request that carried a Music User Token means Apple no longer accepts that
+	// sign-in (expired, revoked, or the subscription lapsed). Signal it so the app can ask the
+	// user to sign in again; a 403 with no token sent is something else.
+	_noteRejection: function (response) {
+		var errs = response && response.json && response.json.errors;
+		if (this.musicUserToken && errs && errs[0] && ("" + errs[0].status) === "403") {
+			this.emitSignal("onMusicUserTokenRejected", {});
+		}
 	},
 
 	// Prefer Apple's own error text when the proxy managed to read a response body -
@@ -201,6 +213,19 @@ AppleMusicService.prototype = {
 
 	getSong: function (id) {
 		return this.request("/catalog/" + this.storefront + "/songs/" + encodeURIComponent(id));
+	},
+
+	// Lyrics: Apple serves lyrics only from amp-api.music.apple.com with an active subscriber token.
+	// Defaults to /lyrics (line-level timing), or /syllable-lyrics if options.syllable is true.
+	getLyrics: function (id, options) {
+		options = options || {};
+		var endpoint = options.syllable ? "syllable-lyrics" : "lyrics";
+		var url = "https://amp-api.music.apple.com/v1/catalog/" + this.storefront + "/songs/" + encodeURIComponent(id) + "/" + endpoint;
+		var params = {};
+		if (options.extendLocalizations) {
+			params.extend = "ttmlLocalizations";
+		}
+		return this.request(url, params);
 	},
 
 	getPlaylist: function (id) {

@@ -256,22 +256,137 @@
 /* Budget for a 320x480 card: 52 header + ~150 art + ~66 text + ~34 scrubber +
    ~56 controls + padding lands comfortably inside the screen, so the transport
    never needs scrolling to reach. */
-.jukie-np { padding: 10px 16px; text-align: center; -webkit-box-sizing: border-box; box-sizing: border-box; }
-/* Taller screens (nowplaying-assistant.js layout() adds .is-tall above 500px): the scene
-   becomes a vertical box at least as tall as the viewport and the spacers split the spare
-   height, so the content is not bunched at the top. Unused on 480px-class screens. */
-.jukie-np-flex { display: none; }
-.jukie-np.is-tall { display: -webkit-box; -webkit-box-orient: vertical; }
-.jukie-np.is-tall .jukie-np-flex { display: block; -webkit-box-flex: 1; }
+.jukie-np {
+	padding: 4px 14px 2px;
+	text-align: center;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+	position: relative;
+	width: 100%;
+}
+.jukie-np-track-view {
+	width: 100%;
+	text-align: center;
+	margin: 0 auto;
+}
+.jukie-np-art-wrap {
+	width: 100%;
+	text-align: center;
+}
 .jukie-np-art {
 	width: 150px;
 	height: 150px;
-	margin: 2px auto 10px;
+	margin: 2px auto 8px;
 	border-radius: 8px;
 	background-color: #202024;
 	background-size: cover;
 	background-position: center;
 	box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+}
+.jukie-np-title { color: #ffffff; font-size: 18px; font-weight: bold; }
+.jukie-np-artist { color: #fa2b56; font-size: 14px; margin-top: 2px; }
+.jukie-np-album { color: #9a9aa0; font-size: 12px; margin-top: 1px; }
+
+/* Lyrics overlay: stretches to fill height, pushing controls towards bottom */
+.jukie-np-lyrics-overlay {
+	width: 100%;
+	background-color: rgba(20, 20, 24, 0.94);
+	border-radius: 10px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+	margin: 0 auto 2px;
+	overflow: hidden;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+	position: relative;
+}
+.jukie-np-lyrics-header {
+	height: 30px;
+	min-height: 30px;
+	line-height: 30px;
+	padding: 0 10px;
+	background: rgba(255, 255, 255, 0.04);
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	text-align: center;
+	cursor: pointer;
+}
+.jukie-np-lyrics-track {
+	font-size: 13px;
+	font-weight: bold;
+	color: #ffffff;
+}
+.jukie-np-lyrics-meta-artist {
+	color: #fa2b56;
+	font-weight: normal;
+}
+.jukie-np-lyrics-scroller {
+	width: 100%;
+	position: relative;
+	text-align: center;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+}
+.jukie-np-lyrics-list {
+	width: 100%;
+	position: relative;
+	padding: 8px 8px 36px;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+}
+.jukie-np-lyrics-line {
+	color: rgba(255, 255, 255, 0.36);
+	font-size: 16px;
+	line-height: 24px;
+	font-weight: bold;
+	padding: 7px 10px;
+	margin: 2px 4px;
+	border-radius: 8px;
+	word-wrap: break-word;
+	-webkit-transition: color 0.25s linear, background-color 0.25s linear, opacity 0.25s linear;
+	transition: color 0.25s linear, background-color 0.25s linear, opacity 0.25s linear;
+	cursor: pointer;
+}
+.jukie-np-lyrics-line:active {
+	background-color: rgba(255, 255, 255, 0.12);
+}
+.jukie-np-lyrics-line.is-active {
+	color: #ffffff;
+	background-color: rgba(250, 43, 86, 0.22);
+	text-shadow: 0 0 10px rgba(250, 43, 86, 0.8);
+}
+.jukie-np-lyrics-empty {
+	padding: 50px 14px;
+	text-align: center;
+}
+.jukie-np-lyrics-empty-title {
+	font-size: 18px;
+	font-weight: bold;
+	color: rgba(255, 255, 255, 0.85);
+	line-height: 1.3;
+}
+.jukie-np-lyrics-empty-sub {
+	margin-top: 8px;
+	font-size: 13px;
+	color: rgba(255, 255, 255, 0.45);
+	line-height: 1.4;
+}
+.jukie-np-lyrics-songwriters {
+	margin-top: 24px;
+	padding: 12px 6px;
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+	color: rgba(255, 255, 255, 0.35);
+	font-size: 11px;
+	line-height: 1.3;
+}
+.jukie-nowplaying-btn.is-active {
+	color: #fa2b56;
+}
+.jukie-np-bottom-controls {
+	width: 100%;
+	text-align: center;
+	margin-top: 2px;
+}
+#np-bottom-controls .jukie-status {
+	padding: 4px 14px 2px;
 }
 .jukie-np-title { color: #ffffff; font-size: 18px; font-weight: bold; }
 .jukie-np-artist { color: #fa2b56; font-size: 14px; margin-top: 2px; }
@@ -297,11 +412,11 @@
 	   padding-bottom below doesn't push the slider/controls down - it just carves
 	   part of that same 12px into a dedicated gap under the text instead of purely
 	   above it. */
-	margin: 8px 10px 0;
-	padding-bottom: 4px;
+	margin: 2px 10px 0;
+	padding-bottom: 2px;
 }
 .jukie-np-times-spacer { -webkit-box-flex: 1; }
-.jukie-np-slider { margin: 0 0 6px; padding: 4px 0; }
+.jukie-np-slider { margin: 0 0 2px; padding: 2px 0; }
 /* Palm's Slider widget draws itself with sprites, same as Enyo's Divider did in the
    sibling app (see that app's jukie.css note on .enyo-divider-left-cap/divider.png) -
    found the real classes by reading the on-device framework template/CSS directly
@@ -346,7 +461,8 @@
 	display: -webkit-box;
 	-webkit-box-pack: center;
 	-webkit-box-align: center;
-	margin-top: 6px;
+	margin-top: 2px;
+	margin-bottom: 2px;
 }
 
 /* Skip buttons: flat double-triangles either side of the play button. */
@@ -437,13 +553,36 @@
 .jukie-btn-row { margin: 8px 12px; }
 
 /* ---- sync scrim --------------------------------------------------------- */
-/* .palm-scrim is the framework's own full-screen dim layer; this just centres a
-   status line under the stock spinner it contains. */
+#syncing-div {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 10000;
+}
+#syncing-div .palm-scrim {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-box-pack: center;
+	-webkit-box-align: center;
+	background: rgba(0, 0, 0, 0.78);
+}
+#syncing-div #sync-spinner {
+	margin: 0 auto;
+}
 .jukie-scrim-msg {
 	color: #ffffff;
 	font-size: 16px;
+	font-weight: bold;
 	text-align: center;
-	margin-top: 12px;
+	margin-top: 16px;
+	padding: 0 20px;
 }
 
 /* ---- search ------------------------------------------------------------- */
@@ -584,6 +723,107 @@
 	text-shadow: 0 1px 3px rgba(0,0,0,0.6);
 	margin-bottom: 8px;
 }
+
+/* ---- exhibition lyrics overlay ---------------------------------------------
+   Overlay over album art, positioned strictly between clock and times/transport
+   so it NEVER overlaps either the clock, elapsed/duration time, or buttons. */
+.jukie-exh-lyrics-overlay {
+	position: absolute;
+	top: 60px;
+	left: 14px;
+	right: 14px;
+	bottom: 124px;
+	background: rgba(18, 18, 22, 0.85);
+	border-radius: 10px;
+	-webkit-box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7);
+	overflow: hidden;
+	z-index: 10;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+}
+
+.jukie-exh-lyrics-header {
+	height: 32px;
+	min-height: 32px;
+	padding: 6px 10px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+	display: -webkit-box;
+	-webkit-box-align: center;
+	background: rgba(0, 0, 0, 0.25);
+}
+
+.jukie-exh-lyrics-track {
+	font-size: 13px;
+	font-weight: bold;
+	color: #fff;
+	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+	-webkit-box-flex: 1;
+}
+
+.jukie-exh-lyrics-meta-artist {
+	font-weight: normal;
+	color: rgba(255, 255, 255, 0.7);
+}
+
+.jukie-exh-lyrics-scroller {
+	-webkit-box-flex: 1;
+	height: 260px;
+	position: relative;
+}
+
+.jukie-exh-lyrics-list {
+	padding: 8px 10px 40px 10px;
+}
+
+.jukie-exh-lyrics-line {
+	font-size: 15px;
+	font-weight: bold;
+	line-height: 1.35em;
+	color: rgba(255, 255, 255, 0.45);
+	padding: 6px 4px;
+	margin-bottom: 2px;
+	border-radius: 6px;
+}
+
+.jukie-exh-lyrics-line:active {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.jukie-exh-lyrics-line.is-active {
+	color: #ff2d55;
+	text-shadow: 0 1px 4px rgba(255, 45, 85, 0.3);
+}
+
+.jukie-exh-lyrics-songwriters {
+	font-size: 11px;
+	color: rgba(255, 255, 255, 0.35);
+	margin-top: 14px;
+	padding: 4px;
+}
+
+.jukie-exh-lyrics-empty {
+	padding: 50px 16px;
+	text-align: center;
+	color: rgba(255, 255, 255, 0.7);
+}
+
+.jukie-exh-lyrics-empty-title {
+	font-size: 16px;
+	font-weight: bold;
+	color: rgba(255, 255, 255, 0.85);
+}
+
+.jukie-exh-lyrics-empty-sub {
+	margin-top: 6px;
+	font-size: 12px;
+	color: rgba(255, 255, 255, 0.45);
+}
+
+.jukie-exh.has-lyrics .jukie-exh-track-info {
+	display: none;
+}
 /* Same flex-grow-spacer technique as .jukie-np-times: this WebKit doesn't honor
    -webkit-box-pack:justify (confirmed on-device on Now Playing), only pack:center/
    start/end and box-flex on children. */
@@ -661,4 +901,28 @@
 	width: 32px;
 	height: 32px;
 	margin: -16px 0 0 -16px;
+}
+
+/* Preferences: Sign in with Apple Music (broker code panel) */
+.jukie-signin-panel { text-align: center; padding: 4px 8px; }
+.jukie-signin-url { color: #fff; font-size: 15px; font-weight: bold; word-wrap: break-word; padding: 2px 4px 8px; }
+.jukie-signin-code { color: #fa2d48; font-size: 34px; font-weight: bold; letter-spacing: 8px; font-family: monospace; padding: 4px 0; }
+.jukie-signin-qr {
+	display: block;
+	margin: 8px auto;
+	text-align: center;
+}
+.jukie-signin-qr canvas {
+	display: block;
+	margin: 0 auto;
+	background-color: #ffffff;
+	padding: 8px;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	width: 140px;
+	height: 140px;
+	box-sizing: content-box;
+}
+.jukie-signin-qr img {
+	display: none !important;
 }

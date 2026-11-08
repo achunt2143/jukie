@@ -246,6 +246,15 @@ enyo.kind(
 		}
 	},
 
+	seekTo: function (sec)
+	{
+		this.log(sec);
+		if (this.$.AudioPlayer && this.$.AudioPlayer.seekTo)
+		{
+			this.$.AudioPlayer.seekTo(sec);
+		}
+	},
+
 	intUpdateRateChanged: function ()
 	{
 		// no-op: AudioPlayer pushes playback time updates via the audio element's timeupdate event
@@ -290,14 +299,17 @@ enyo.kind(
 
 			if (this.$.PlaybackList.getCurrentPlayBackItem())
 			{
+				var curItem = this.$.PlaybackList.getCurrentPlayBackItem();
 				var objTrackInfo = {strTrackArtist: this.getTrackArtist(),
 									strTrackTitle: this.getTrackTitle(),
 									strTrackAlbum: this.getTrackAlbum(),
 									strTrackGenre: this.getTrackGenre(),
-									strTrackImage: this.$.PlaybackList.getCurrentPlayBackItem().artUrl || "",
+									strTrackImage: curItem.artUrl || "",
 									intTrackIndex: this.$.PlaybackList.intCurrTrackIndex,
-									intTrackOrigIndex: this.$.PlaybackList.getCurrentPlayBackItem().origIndex,
+									intTrackOrigIndex: curItem.origIndex,
 									strTrackID: this.getTrackID(),
+									id: curItem.id || this.getTrackID(),
+									catalogId: curItem.catalogId || null,
 									intTrackTime: this.getTrackCurrentTime(),
 									intTrackDuration: this.getTrackDuration(),
 									strTrackDuration: this.getTrackDuration(true),
