@@ -16,10 +16,22 @@
       <div id="exh-clock" class="jukie-exh-clock"></div>
     </div>
 
+    <!-- Lyrics Overlay: pinned between clock and times/transport, never overlapping either -->
+    <div id="exh-lyrics-overlay" class="jukie-exh-lyrics-overlay" style="display:none">
+      <div id="exh-lyrics-header" class="jukie-exh-lyrics-header">
+        <div id="exh-lyrics-track" class="jukie-exh-lyrics-track truncating-text"></div>
+      </div>
+      <div id="exh-lyrics-scroller" x-mojo-element="Scroller" class="jukie-exh-lyrics-scroller">
+        <div id="exh-lyrics-list" class="jukie-exh-lyrics-list"></div>
+      </div>
+    </div>
+
     <div class="jukie-exh-bottom">
-      <div id="exh-album" class="jukie-exh-album truncating-text"></div>
-      <div id="exh-title" class="jukie-exh-title truncating-text"></div>
-      <div id="exh-artist" class="jukie-exh-artist truncating-text"></div>
+      <div id="exh-track-info" class="jukie-exh-track-info" x-mojo-tap-highlight="momentary">
+        <div id="exh-album" class="jukie-exh-album truncating-text"></div>
+        <div id="exh-title" class="jukie-exh-title truncating-text"></div>
+        <div id="exh-artist" class="jukie-exh-artist truncating-text"></div>
+      </div>
 
       <div class="jukie-exh-times">
         <span id="exh-elapsed">0:00</span>

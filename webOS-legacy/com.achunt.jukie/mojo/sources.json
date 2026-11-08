@@ -2,6 +2,7 @@
   { "source": "scripts/promise-polyfill.js" },
   { "source": "scripts/fetch-polyfill.js" },
   { "source": "scripts/webtoken.js" },
+  { "source": "scripts/qrcodelib.js" },
 
   { "source": "app/models/db8-service.js" },
   { "source": "app/models/settings-service.js" },
@@ -11,6 +12,7 @@
   { "source": "app/models/adts.js" },
   { "source": "app/models/emoji.js" },
   { "source": "app/models/playback-service.js" },
+  { "source": "app/models/lyrics-service.js" },
 
   { "source": "app/controllers/app-assistant.js" },
   { "source": "app/controllers/mainmenu-assistant.js" },

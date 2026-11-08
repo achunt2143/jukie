@@ -1,6 +1,77 @@
 # Jukie — Release Notes
 
-## v2.1 — Offline Play, a Cache You Control, Lunacy, and Emoji
+## v2.2 (2026-11-08) — WOSA OAuth Sign-In, Synced Lyrics, Mojo, and Exhibition
+
+*Released: November 8, 2026*
+
+Jukie 2.2 introduces a real, device-friendly Apple Music sign-in powered by the webOS Archive
+(WOSA) OAuth broker, and brings time-synchronized and static lyrics across the entire webOS
+family — the TouchPad (Enyo split view), phones (Mojo Now Playing flip view), and TouchStone
+Exhibition Mode. Full detail is in the [CHANGELOG](CHANGELOG.md).
+
+### What's new
+
+- **Sign in with Apple Music via the WOSA OAuth broker.** Replaces manual token extraction and
+  pasting with a seamless device-linking flow. Preferences displays an activation code, direct URL,
+  and scannable QR code. You finish signing in with your Apple ID on a phone or computer via the
+  broker (`oauth.wosa.link`), and the Music User Token transfers back to the device automatically.
+  Supported on both Enyo and Mojo.
+- **Time-synced lyrics in CoverFlow (TouchPad / Enyo).**
+  - **iPad-style 50/50 split view**: When opening lyrics in CoverFlow mode, the screen splits
+    evenly into two balanced columns. The left column showcases large album artwork, responsive track/artist/album
+    metadata, and a tap-to-play/pause control; the right column hosts the lyrics presentation.
+  - **Synchronized scrolling and line highlighting**: Active lyrics highlight in Apple Music accent
+    red and smoothly auto-scroll into center focus as playback progresses.
+  - **Interactive tap-to-seek**: Tap any timestamped lyric line to instantly jump playback to that
+    position in the track.
+  - **Native App Menu toggle**: An intuitive "Lyrics" / "Hide Lyrics" option appears dynamically in
+    the top webOS status bar App Menu whenever you are in CoverFlow mode.
+  - **Songwriter credits & graceful fallbacks**: Formatted songwriter and composer credits appear at
+    the bottom of the lyrics, alongside clean loading and unavailable states when a track does not
+    have lyrics available.
+- **Time-synced lyrics in Now Playing (Phones / Mojo / Pre 2 / Veer).**
+  - **Now Playing lyrics flip view**: Read lyrics right on your phone in the Now Playing scene. Tap
+    the dedicated Lyrics button or tap the album artwork directly to flip smoothly between the album cover
+    and real-time lyrics.
+  - **Synced line highlighting & tap-to-seek**: Active lines illuminate in accent red and track the vocal
+    timing. Tapping any line immediately seeks playback to that point.
+  - **Persistent preference**: Jukie remembers your lyrics display preference across track transitions and
+    app launches.
+- **Synced lyrics in Exhibition Mode (TouchStone Dock).**
+  - **TouchPad ambient dock view**: When docked on a TouchStone (or opened via AppMenu → Exhibition Mode),
+    an elegant semi-transparent floating lyrics panel sits alongside the large clock and ambient full-bleed
+    album artwork.
+  - **Phone dock view**: WebOS 2.x phones get a docked lyrics presentation with full time-synced scrolling.
+  - **Dock controls & tap-to-seek**: Tap any lyric line on the dock to seek; tap track info to toggle
+    the lyrics panel on or off. Remembers your dock lyrics visibility preference.
+  - **Dual-mode engine**: Mirrors the active player via `ExhibitionManager` pushes when Jukie is open,
+    and runs a standalone audio engine with session resume if docked while the app was closed.
+- **Automatic library-to-catalog matching.** Personal library tracks (`i.xxxx` IDs) automatically resolve
+  their catalog counterparts in the background to retrieve synced lyrics, providing lyrics for both
+  Apple Music catalog browsing and your personal saved library.
+
+### Under the hood
+
+- **TTML parsing & timing synchronization**: Lyrics delivered from Apple Music are parsed from TTML
+  into structured timestamped models directly on the client, managing begin/end intervals and
+  falling back gracefully to plain/unsynced text when timestamps are absent.
+- **Performance-tuned animations**: Optimized for webOS 3.0.5 on TouchPad hardware by avoiding
+  heavy font-size reflow transitions and blur shadows during active line updates, ensuring fluid,
+  stutter-free playback.
+- **Scroller positioning & empty-state geometry**: Explicitly resets scroller offsets to `(0, 0)` and
+  triggers layout recalculation when transitioning between lyriced tracks and tracks without lyrics,
+  ensuring the "No Lyrics Available" notice is always centered and never clipped off-screen.
+- **Inter-window exhibition synchronization**: `ExhibitionManager` streams lyrics data, active track
+  metadata, play/pause transitions, and playback timing between the main Jukie card and the Exhibition dock card.
+- **App Menu lazy component hydration**: Resolved an Enyo `LazyControl` lifecycle quirk where
+  dynamically updated menu items were not created before menu opening, ensuring the Lyrics toggle is
+  always present and up to date on first open.
+- **Strict 50/50 flexbox constraints**: Balanced Enyo's `HFlexLayout` so that both the album artwork
+  and lyrics columns divide the 1024px TouchPad display into equal 512px panes regardless of text length.
+
+## v2.1 (2026-10-17) — Offline Play, a Cache You Control, Lunacy, and Emoji
+
+*Released: October 17, 2026*
 
 Jukie 2.1 makes the music you care about available without a connection, lets you decide how
 much space it may use, runs on **Lunacy** (webOS on Android), and finally shows emoji in your
@@ -50,7 +121,9 @@ playlist and song names on the TouchPad. Full detail is in the [CHANGELOG](CHANG
 - The published package has no Widevine credential; full-track playback needs your own `device.wvd`
   in the service folder (library browsing, search and previews work without it).
 
-## v2.0 — webOS 2.x Support (Pre2, Veer) + a Unified Package
+## v2.0 (2026-07-30) — webOS 2.x Support (Pre2, Veer) + a Unified Package
+
+*Released: July 30, 2026*
 
 Jukie now runs on **two generations of webOS from one install**: the original
 TouchPad/Pre3-era Enyo build, and a full new Mojo port for webOS 2.x devices (Pre2, Veer,
@@ -106,7 +179,21 @@ review would have caught:
   dashboard/notification mini-player - full playback control still works from Now Playing
   and Exhibition Mode.
 
-## v1.0 — Initial Release
+## v1.0.1 (2026-07-27) — Token Auto-Refresh & Settings Sync
+
+*Released: July 27, 2026*
+
+A targeted maintenance release resolving Developer Token lifecycle handling, Settings credential persistence, and Apple Music API header compatibility.
+
+### Improvements
+
+- **Automatic Developer Token refresh**: Scrapes and refreshes the public AMPWebPlay web-player token from `music.apple.com` directly on the device, eliminating expired developer token errors without requiring manual token extraction.
+- **Immediate Settings credential write**: Decoupled credentials file persistence from the db8 database transaction queue, preventing Settings saves from stalling during active background library syncs.
+- **Origin header enforcement**: Added `Origin: https://music.apple.com` and `Referer` headers to all API requests, resolving 401 Unauthorized errors returned by Apple Music's API endpoints.
+
+## v1.0 (2026-07-02) — Initial Release
+
+*Released: July 2, 2026*
 
 Jukie is an unofficial Apple Music client for legacy Palm/HP webOS (TouchPad and Pre 3,
 2011–2012 hardware). It started from the bones of the original stock Palm Music app and

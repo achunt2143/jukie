@@ -58,6 +58,7 @@ enyo.depends(
 	"utility/qrcodelib.js",
 	"controls/qrcode.js",
 	"utility/applemusicservice.js",
+	"utility/lyrics.js",
 	"utility/lunacy.js",
 	"utility/adts.js",
 	"utility/audioplayer.js",

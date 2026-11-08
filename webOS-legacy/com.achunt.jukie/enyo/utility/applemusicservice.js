@@ -201,7 +201,7 @@ enyo.kind({
     request: function (path, params, _isRetry) {
         var self = this;
         var query = this._buildQuery(params);
-        var url = this.API_BASE + path + (query ? ("?" + query) : "");
+        var url = (/^https?:\/\//i.test(path) ? path : (this.API_BASE + path)) + (query ? ("?" + query) : "");
 
         // Which route? Only Lunacy goes through the service; wait for its probe first so an
         // early request (boot, first tap) can't take the wrong one.
@@ -290,6 +290,19 @@ enyo.kind({
 
     getSong: function (id) {
         return this.request("/catalog/" + this.storefront + "/songs/" + encodeURIComponent(id));
+    },
+
+    // Lyrics: Apple serves lyrics only from amp-api.music.apple.com with an active subscriber token.
+    // Defaults to /lyrics (line-level timing), or /syllable-lyrics if options.syllable is true.
+    getLyrics: function (id, options) {
+        options = options || {};
+        var endpoint = options.syllable ? "syllable-lyrics" : "lyrics";
+        var url = "https://amp-api.music.apple.com/v1/catalog/" + this.storefront + "/songs/" + encodeURIComponent(id) + "/" + endpoint;
+        var params = {};
+        if (options.extendLocalizations) {
+            params.extend = "ttmlLocalizations";
+        }
+        return this.request(url, params);
     },
 
     getPlaylist: function (id) {

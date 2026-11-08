@@ -51,6 +51,12 @@ html, body {
 .jukieExhibition .exh-bottom {
 	padding-bottom: 8px;
 }
+.jukieExhibition .exh-track-info {
+	cursor: pointer;
+}
+.jukieExhibition.has-lyrics .exh-track-info {
+	max-width: 480px;
+}
 .jukieExhibition .exh-album {
 	font-size: 16px;
 	text-transform: uppercase;
@@ -119,4 +125,93 @@ html, body {
 }
 .jukieExhibition .exh-transport .exh-btn.play.paused .enyo-button-icon {
 	background-position: 0 0;
+}
+
+/* ---- exhibition lyrics panel (TouchPad landscape) --------------------------- */
+.jukieExhibition .exh-lyrics-panel {
+	position: absolute;
+	top: 84px;
+	right: 36px;
+	width: 440px;
+	bottom: 120px;
+	background: rgba(18, 18, 22, 0.82);
+	-webkit-border-radius: 12px;
+	border-radius: 12px;
+	-webkit-box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65);
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65);
+	overflow: hidden;
+	z-index: 10;
+	padding: 12px 18px;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+}
+
+.jukieExhibition .exh-lyrics-header {
+	height: 36px;
+	min-height: 36px;
+	padding: 0 4px 6px 4px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.jukieExhibition .exh-lyrics-title {
+	font-size: 16px;
+	font-weight: bold;
+	color: #fa2d48;
+	letter-spacing: 0.02em;
+}
+
+.jukieExhibition .exh-lyrics-scroller {
+	position: relative;
+	margin-top: 6px;
+}
+
+.jukieExhibition .exh-lyrics-list {
+	padding: 12px 6px 120px 6px;
+}
+
+.jukieExhibition .exh-lyrics-line {
+	padding: 10px 14px;
+	font-size: 18px;
+	line-height: 1.45;
+	font-weight: bold;
+	color: rgba(255, 255, 255, 0.45);
+	-webkit-border-radius: 8px;
+	border-radius: 8px;
+	margin-bottom: 4px;
+	cursor: pointer;
+}
+
+.jukieExhibition .exh-lyrics-line:active {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.jukieExhibition .exh-lyrics-line.is-active {
+	color: #ffffff;
+	background: rgba(250, 45, 72, 0.24);
+	text-shadow: 0 1px 4px rgba(250, 45, 72, 0.4);
+}
+
+.jukieExhibition .exh-lyrics-songwriters {
+	font-size: 13px;
+	color: rgba(255, 255, 255, 0.4);
+	margin-top: 24px;
+	padding: 8px 14px;
+}
+
+.jukieExhibition .exh-lyrics-empty {
+	padding: 80px 16px;
+	text-align: center;
+	color: rgba(255, 255, 255, 0.7);
+}
+
+.jukieExhibition .exh-lyrics-empty-title {
+	font-size: 20px;
+	font-weight: bold;
+	color: rgba(255, 255, 255, 0.85);
+}
+
+.jukieExhibition .exh-lyrics-empty-sub {
+	margin-top: 8px;
+	font-size: 14px;
+	color: rgba(255, 255, 255, 0.45);
 }

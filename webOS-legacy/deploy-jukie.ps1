@@ -32,6 +32,8 @@
 # Usage:  powershell -ExecutionPolicy Bypass -File deploy-jukie.ps1
 #         add  -NoPackage   to skip the rebuild/repackage and just reinstall + reregister
 #              whatever .ipk is already sitting here (matches the old scripts' behavior).
+#         add  -PackageOnly (or -NoInstall) to build the package with DRM and verify secrets,
+#              skipping palm-install and on-device post-install (for manual WOSQI install).
 #         add  -SkipWebos2  to skip the webOS2/Pre2 jukie-drm cross-build (e.g. the
 #              patched toolchain isn't set up on this machine) - webOS3/TouchPad playback
 #              is unaffected either way; only webOS2-device full-track playback needs it.
@@ -39,11 +41,16 @@
 
 param(
     [switch]$NoPackage,
-    [switch]$SkipWebos2
+    [switch]$SkipWebos2,
+    [switch]$PackageOnly,
+    [switch]$NoInstall
 )
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
+if (Test-Path "$env:LOCALAPPDATA\Python\bin") {
+    $env:PATH = "$env:LOCALAPPDATA\Python\bin;$env:PATH"
+}
 $svc = 'com.achunt.jukie.service'
 
 if (-not $NoPackage) {
@@ -104,6 +111,11 @@ $ipk = Get-ChildItem 'com.achunt.jukie_*_all.ipk' | Select-Object -First 1
 if ($LASTEXITCODE -ne 0) {
     Remove-Item -Force $ipk.Name
     throw "$($ipk.Name) contained local-only secret files and was deleted - see check-ipk-secrets output above"
+}
+
+if ($PackageOnly -or $NoInstall) {
+    Write-Host "`nPackage created: $($ipk.FullName)" -ForegroundColor Green
+    exit 0
 }
 
 & palm-install.bat $ipk.Name

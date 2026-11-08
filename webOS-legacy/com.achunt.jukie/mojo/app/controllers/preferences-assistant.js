@@ -99,12 +99,16 @@ PreferencesAssistant.prototype.setup = function () {
 	this.broker = new BrokerService();
 	this.signInModel = { label: this.musicModel.value ? "Sign in again" : "Sign in with Apple Music", disabled: false };
 	this.controller.get("signedIn").innerHTML = this.musicModel.value ? "Signed in to Apple Music" : "Not signed in";
+	this.signInCheckModel = { label: "Check now", disabled: false };
 	this.signInCancelModel = { label: "Cancel", disabled: false };
 	this.controller.setupWidget("signInBtn", { type: Mojo.Widget.defaultButton }, this.signInModel);
+	this.controller.setupWidget("signInCheckBtn", { type: Mojo.Widget.defaultButton }, this.signInCheckModel);
 	this.controller.setupWidget("signInCancelBtn", { type: Mojo.Widget.defaultButton }, this.signInCancelModel);
 	this.signInH = this.onSignIn.bind(this);
+	this.signInCheckH = this.onSignInCheck.bind(this);
 	this.signInCancelH = this.onSignInCancel.bind(this);
 	this.controller.get("signInBtn").observe(Mojo.Event.tap, this.signInH);
+	this.controller.get("signInCheckBtn").observe(Mojo.Event.tap, this.signInCheckH);
 	this.controller.get("signInCancelBtn").observe(Mojo.Event.tap, this.signInCancelH);
 
 	this.saveH = this.onSave.bind(this);
@@ -124,16 +128,19 @@ PreferencesAssistant.prototype.setStatus = function (t) {
 // exactly like a manual paste + Save.
 PreferencesAssistant.prototype.onSignIn = function () {
 	var self = this;
-	this.setStatus("");
+	this.setStatus("Connecting to sign-in service…");
 	this.signInModel.disabled = true;
 	this.controller.modelChanged(this.signInModel);
 	this.broker.start({
 		onCode: function (info) {
-			self.controller.get("signInUrl").innerHTML = self.broker.baseUrl + "/activate.php?app=" +
-				encodeURIComponent(self.broker.appName);
+			self.setStatus("");
+			var useUrl = info.useUrl || "https://oauth.wosa.link/applemusic";
+			var qrUrl = self.broker.activateUrl(info.code);
+			self.controller.get("signInUrl").innerHTML = useUrl;
 			self.controller.get("signInCode").innerHTML = info.code;
 			self.controller.get("signInStatus").innerHTML = "Waiting for you to finish signing in…";
 			self.controller.get("signInPanel").style.display = "";
+			self.renderQrCode(qrUrl);
 		},
 		onConnected: function (tokens) {
 			var i;
@@ -157,6 +164,29 @@ PreferencesAssistant.prototype.onSignIn = function () {
 			self.setStatus(message);
 		}
 	});
+};
+
+PreferencesAssistant.prototype.renderQrCode = function (url) {
+	var el = this.controller.get("signInQr");
+	if (!el) { return; }
+	el.innerHTML = "";
+	if (typeof window.QRCode !== "undefined") {
+		try {
+			this.qrCode = new window.QRCode(el, {
+				text: url,
+				width: 140,
+				height: 140,
+				correctLevel: window.QRCode.CorrectLevel.M
+			});
+		} catch (e) {
+			Mojo.Log.error("[Prefs] QR render error: " + e);
+		}
+	}
+};
+
+PreferencesAssistant.prototype.onSignInCheck = function () {
+	this.controller.get("signInStatus").innerHTML = "Checking…";
+	this.broker.checkNow();
 };
 
 PreferencesAssistant.prototype.showSignedIn = function () {
@@ -240,6 +270,7 @@ PreferencesAssistant.prototype.onClearCache = function () {
 PreferencesAssistant.prototype.cleanup = function () {
 	this.broker.stop();
 	this.controller.get("signInBtn").stopObserving(Mojo.Event.tap, this.signInH);
+	this.controller.get("signInCheckBtn").stopObserving(Mojo.Event.tap, this.signInCheckH);
 	this.controller.get("signInCancelBtn").stopObserving(Mojo.Event.tap, this.signInCancelH);
 	this.controller.get("saveBtn").stopObserving(Mojo.Event.tap, this.saveH);
 	this.controller.get("refreshBtn").stopObserving(Mojo.Event.tap, this.refreshH);

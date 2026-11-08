@@ -252,7 +252,7 @@ enyo.kind({
 
 	// onCode: the broker minted a code and began polling in the background.
 	showCode: function (sender, info) {
-		this.$.signInUrl.setContent(info.useUrl);
+		this.$.signInUrl.setContent(info.useUrl || "https://oauth.wosa.link/applemusic");
 		this.$.signInCode.setContent(info.code);
 		// activate.php?app=&code= works on every host (no rewrite), and pre-fills the code.
 		this.$.signInQr.setText(this.$.broker.getBrokerBaseUrl() + "/activate.php?app=" +

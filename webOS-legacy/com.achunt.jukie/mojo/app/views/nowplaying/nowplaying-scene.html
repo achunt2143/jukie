@@ -6,47 +6,46 @@
     </div>
   </div>
 
-  <!-- Sized to fit a 320x480 card without scrolling: the transport controls must
-       always be reachable, so the art is deliberately modest rather than hero-sized. -->
-  <!-- The .jukie-np-flex spacers do nothing on 480px-class screens; on taller ones
-       (nowplaying-assistant.js layout() adds .is-tall) they share out the spare height. -->
   <div id="np-root" class="jukie-np" style="margin-top:52px">
-    <div class="jukie-np-flex"></div>
-    <div class="jukie-np-art-wrap"><div id="np-art" class="jukie-np-art"></div></div>
-
-    <div id="np-title" class="jukie-np-title truncating-text"></div>
-    <div id="np-artist" class="jukie-np-artist truncating-text"></div>
-    <div id="np-album" class="jukie-np-album truncating-text"></div>
-
-    <!-- Times sit ABOVE the scrubber, pinned to its two ends. They can't share a
-         flex row with the Slider itself: that widget renders at its own full width
-         and ignores the box layout, so it drew straight over both labels. A plain
-         flex-grow spacer (not -webkit-box-pack:justify) does the push-apart - this
-         WebKit doesn't honor the "justify" pack value (confirmed on-device: both
-         labels rendered stuck together at the left edge), only pack:center/start/end
-         and box-flex on children, which is exactly what the skip/play/pause row
-         already relies on. -->
-    <div class="jukie-np-flex"></div>
-    <div class="jukie-np-times">
-      <span id="np-elapsed">0:00</span>
-      <div class="jukie-np-times-spacer"></div>
-      <span id="np-duration">0:00</span>
-    </div>
-    <div id="seekSlider" x-mojo-element="Slider" class="jukie-np-slider"></div>
-
-    <div class="jukie-np-flex"></div>
-    <div class="jukie-np-controls">
-      <div id="np-prev" class="jukie-np-skip is-prev" x-mojo-tap-highlight="momentary"></div>
-      <!-- While loading, the play/pause icon is replaced by the stock webOS spinner
-           rather than a text status - see nowplaying-assistant.js setBuffering(). -->
-      <div id="np-playpause-wrap" class="jukie-np-btn-wrap">
-        <div id="np-playpause" class="jukie-np-btn is-play" x-mojo-tap-highlight="momentary"></div>
-        <div id="np-spinner" x-mojo-element="Spinner" class="jukie-np-spinner" style="display:none"></div>
+    <!-- Normal Track View (Art + Title + Artist + Album) -->
+    <div id="np-track-view" class="jukie-np-track-view">
+      <div class="jukie-np-art-wrap">
+        <div id="np-art" class="jukie-np-art" x-mojo-tap-highlight="momentary"></div>
       </div>
-      <div id="np-next" class="jukie-np-skip is-next" x-mojo-tap-highlight="momentary"></div>
+      <div id="np-title" class="jukie-np-title truncating-text"></div>
+      <div id="np-artist" class="jukie-np-artist truncating-text"></div>
+      <div id="np-album" class="jukie-np-album truncating-text"></div>
     </div>
 
-    <div id="np-state" class="jukie-status"></div>
-    <div class="jukie-np-flex"></div>
+    <!-- Lyrics Overlay View -->
+    <div id="np-lyrics-overlay" class="jukie-np-lyrics-overlay" style="display:none">
+      <div id="np-lyrics-header" class="jukie-np-lyrics-header" x-mojo-tap-highlight="momentary">
+        <div id="np-lyrics-track" class="jukie-np-lyrics-track truncating-text"></div>
+      </div>
+      <div id="np-lyrics-scroller" x-mojo-element="Scroller" class="jukie-np-lyrics-scroller">
+        <div id="np-lyrics-list" class="jukie-np-lyrics-list"></div>
+      </div>
+    </div>
+
+    <!-- Transport controls pinned below track view or lyrics -->
+    <div id="np-bottom-controls" class="jukie-np-bottom-controls">
+      <div class="jukie-np-times">
+        <span id="np-elapsed">0:00</span>
+        <div class="jukie-np-times-spacer"></div>
+        <span id="np-duration">0:00</span>
+      </div>
+      <div id="seekSlider" x-mojo-element="Slider" class="jukie-np-slider"></div>
+
+      <div class="jukie-np-controls">
+        <div id="np-prev" class="jukie-np-skip is-prev" x-mojo-tap-highlight="momentary"></div>
+        <div id="np-playpause-wrap" class="jukie-np-btn-wrap">
+          <div id="np-playpause" class="jukie-np-btn is-play" x-mojo-tap-highlight="momentary"></div>
+          <div id="np-spinner" x-mojo-element="Spinner" class="jukie-np-spinner" style="display:none"></div>
+        </div>
+        <div id="np-next" class="jukie-np-skip is-next" x-mojo-tap-highlight="momentary"></div>
+      </div>
+
+      <div id="np-state" class="jukie-status" style="display:none"></div>
+    </div>
   </div>
 </div>

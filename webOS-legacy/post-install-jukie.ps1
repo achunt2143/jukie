@@ -70,4 +70,7 @@ ls-control scan-services >/dev/null 2>&1
 echo "registered $SVC on the bus"
 echo "---EXIT---"; exit
 '@
-$deviceScript | & novacom.exe -t open tty://
+$tmp = [System.IO.Path]::GetTempFileName()
+[System.IO.File]::WriteAllText($tmp, $deviceScript, [System.Text.Encoding]::ASCII)
+cmd /c "novacom.exe -t open tty:// < `"$tmp`""
+Remove-Item $tmp -Force
